@@ -120,16 +120,23 @@ The project uses the [NVIDIA Nemotron-ClimbMix](https://huggingface.co/datasets/
 Downloads from HuggingFace, tokenizes with GPT-2 BPE (`tiktoken`), and produces `train.bin` / `val.bin` (uint16 memmap) in `data/climbmix/`.
 
 ```bash
+# Set HF cache to scratch (home directory has limited quota)
+export HF_HOME=/scratch/zhu.shili/hf_cache
+mkdir -p $HF_HOME
+
 # Quick: single part (sufficient for testing)
-python data/climbmix/prepare.py --part 0
+python data/climbmix/prepare.py --part 0 --num-proc 48
 python data/climbmix/merge.py
 
-# Full dataset (all 10 parts)
+# Full dataset (all 10 parts + merge)
 bash data/climbmix/prepare.sh
+# This runs prepare.py for parts 0–9, then merge.py automatically
 
 # Prepare a specific part with custom workers
-python data/climbmix/prepare.py --part 3 --num-proc 32
+python data/climbmix/prepare.py --part 3 --num-proc 48
 ```
+
+> **Note:** Data preparation is CPU-only — no GPU needed. Run it on the login node or a CPU-only job. Each part loads 10 of 100 parquet files from HuggingFace to avoid OOM.
 
 | Script | Purpose |
 |---|---|
