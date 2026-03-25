@@ -68,13 +68,18 @@ setup_default_logging()
 logger = logging.getLogger(__name__)
 
 def get_base_dir():
-    # co-locate etude intermediates with other cached data in ~/.cache (by default)
+    # Use ETUDE_BASE_DIR if set, then try /scratch/$USER/etude, fallback to ~/.cache/etude
     if os.environ.get("ETUDE_BASE_DIR"):
         etude_dir = os.environ.get("ETUDE_BASE_DIR")
     else:
-        home_dir = os.path.expanduser("~")
-        cache_dir = os.path.join(home_dir, ".cache")
-        etude_dir = os.path.join(cache_dir, "etude")
+        user = os.environ.get("USER", "")
+        scratch_dir = os.path.join("/scratch", user, "etude")
+        if os.path.isdir(os.path.join("/scratch", user)):
+            etude_dir = scratch_dir
+        else:
+            home_dir = os.path.expanduser("~")
+            cache_dir = os.path.join(home_dir, ".cache")
+            etude_dir = os.path.join(cache_dir, "etude")
     os.makedirs(etude_dir, exist_ok=True)
     return etude_dir
 
