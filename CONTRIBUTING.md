@@ -160,6 +160,9 @@ ssh zhu.shili@login.explorer.northeastern.edu
 
 # If using Ghostty terminal, fix TERM compatibility before starting tmux
 TERM=xterm-256color tmux
+
+# Activate the virtual environment
+source .venv/bin/activate
 ```
 
 ### GPU Resource Monitor
