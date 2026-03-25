@@ -111,16 +111,45 @@ python -m scripts.base_train --depth=4 --max-seq-len=512 \
 python -m scripts.base_eval
 ```
 
-### Data preparation
+### Data Preparation
+
+The project uses the [NVIDIA Nemotron-ClimbMix](https://huggingface.co/datasets/nvidia/Nemotron-ClimbMix) dataset (400B tokens). There are two paths:
+
+#### Path 1: Binary Files (Recommended)
+
+Downloads from HuggingFace, tokenizes with GPT-2 BPE (`tiktoken`), and produces `train.bin` / `val.bin` (uint16 memmap) in `data/climbmix/`.
 
 ```bash
-# Quick: single part
+# Quick: single part (sufficient for testing)
 python data/climbmix/prepare.py --part 0
 python data/climbmix/merge.py
 
-# Full dataset
+# Full dataset (all 10 parts)
 bash data/climbmix/prepare.sh
+
+# Prepare a specific part with custom workers
+python data/climbmix/prepare.py --part 3 --num-proc 32
 ```
+
+| Script | Purpose |
+|---|---|
+| `data/climbmix/prepare.py` | Download & tokenize individual parts (0–9) |
+| `data/climbmix/merge.py` | Merge part files into `train.bin` / `val.bin` |
+| `data/climbmix/prepare.sh` | End-to-end script (all parts + merge) |
+
+#### Path 2: Parquet Streaming
+
+Downloads parquet shards and tokenizes on-the-fly during training.
+
+```bash
+# Download ~170 shards (enough for GPT-2 scale training)
+python -m etude.dataset -n 170
+
+# Download all shards
+python -m etude.dataset -n -1
+```
+
+The dataloader uses **BOS-aligned best-fit packing** — 100% utilization with no padding. Data is automatically sharded across ranks for DDP training.
 
 ## Khoury Discovery Cluster
 
