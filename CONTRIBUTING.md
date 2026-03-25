@@ -139,21 +139,32 @@ Check available GPU resources on the cluster: [GPU Monitor Dashboard](https://oo
 Request an interactive shell with a GPU:
 
 ```bash
-srun --partition=sharing --nodes=1 --pty --gres=gpu:h100:1 --ntasks=1 --mem=80GB --time=4:00:00 /bin/bash
+# H200 (recommended — 96 GPUs across gpu-interactive/gpu-short/gpu partitions, higher availability)
 srun --partition=gpu-interactive --nodes=1 --pty --gres=gpu:h200:1 --ntasks=1 --mem=141GB --time=2:00:00 /bin/bash
+
+# H100 (4 GPUs on sharing partition, tighter availability)
+srun --partition=sharing --nodes=1 --pty --gres=gpu:h100:1 --ntasks=1 --mem=80GB --time=2:00:00 /bin/bash
 ```
 
 | Flag | Meaning |
 |---|---|
-| `--partition=sharing` | Target the sharing partition |
+| `--partition=gpu-interactive` | Target the gpu-interactive partition (H200) |
+| `--partition=sharing` | Target the sharing partition (H100) |
 | `--nodes=1` | Single node |
 | `--pty` | Allocate a pseudo-terminal (interactive) |
-| `--gres=gpu:h100:1` | Request 1x H100 GPU (change model/count as needed) |
+| `--gres=gpu:h200:1` | Request 1x H200 GPU (change model/count as needed) |
 | `--ntasks=1` | One task |
-| `--mem=80GB` | Allocated memory |
-| `--time=4:00:00` | Wall-time limit of 4 hours |
+| `--mem=141GB` | Allocated memory (use 80GB for H100) |
+| `--time=2:00:00` | Wall-time limit of 2 hours |
 
-> **Tip:** Replace `h100` with `a100`, `v100-sxm2`, `l40s`, etc. to request a different GPU type.
+#### Available GPU Resources
+
+| GPU | Partitions | Total Nodes | Total GPUs |
+|---|---|---|---|
+| H100 | `sharing` | 1 | 4 |
+| H200 | `gpu-interactive`, `gpu-short`, `gpu` | 12 | 96 |
+
+> **Tip:** Replace `h200` / `h100` with `a100`, `v100-sxm2`, `l40s`, etc. to request a different GPU type.
 
 ### Job Management
 
