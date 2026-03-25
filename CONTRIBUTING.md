@@ -1,0 +1,185 @@
+# Contributing to Etude
+
+Thanks for your interest in contributing to Etude! This document covers how to get started.
+
+## Getting Started
+
+### Prerequisites
+
+- Python 3.11+
+- [uv](https://docs.astral.sh/uv/) package manager
+- CUDA 12.8+ (for GPU training) or CPU/MPS for development
+
+### Setup
+
+```bash
+git clone https://github.com/SASUKE40/Etude.git
+cd Etude
+
+# GPU
+uv sync --extra gpu
+
+# CPU / Apple Silicon
+uv sync --extra cpu
+```
+
+### Running Tests
+
+```bash
+uv run pytest tests/ -v
+```
+
+## Project Structure
+
+```
+etude/          Core library (model, training utilities, inference)
+scripts/        Training and evaluation entry points
+data/           Data preparation scripts
+tasks/          Evaluation task definitions
+runs/           Shell scripts for full training pipelines
+tests/          Unit tests
+```
+
+Key files:
+
+- `etude/gpt.py` — Model architecture (hybrid Gated DeltaNet + Gated Attention)
+- `etude/deltanet.py` — Gated DeltaNet layer implementation
+- `etude/optim.py` — Muon + AdamW optimizer
+- `scripts/base_train.py` — Pretraining script
+
+## How to Contribute
+
+### Reporting Issues
+
+Open an issue on GitHub with:
+
+- A clear description of the problem
+- Steps to reproduce
+- Expected vs actual behavior
+- Environment details (GPU, PyTorch version, OS)
+
+### Submitting Changes
+
+1. Fork the repository
+2. Create a feature branch from `main`
+3. Make your changes
+4. Run tests: `uv run pytest tests/ -v`
+5. Submit a pull request
+
+### Pull Request Guidelines
+
+- Keep PRs focused — one logical change per PR
+- Include a clear description of what changed and why
+- Add tests for new functionality
+- Make sure existing tests pass
+- Follow the existing code style
+
+## Code Style
+
+- No unnecessary abstractions — keep it simple and hackable
+- Minimal comments — only where the logic isn't self-evident
+- No bias in Linear layers unless explicitly needed
+- Use `RMSNorm` (parameter-free) throughout
+- Explicit dtype management via `COMPUTE_DTYPE` instead of autocast
+
+## Architecture Notes
+
+The model uses a hybrid layout: 6 groups of 4 layers each.
+
+```
+Group = 3 × (Gated DeltaNet → SwiGLU FFN) + 1 × (Gated Attention → SwiGLU FFN)
+```
+
+When making changes:
+
+- **DeltaNet layers** handle long-range dependencies with O(T) complexity
+- **Attention layers** (1 per group) provide full quadratic attention for precision
+- Changes should work across the full architecture, not just individual layer types
+- Test at small scale first (e.g. `--depth=4 --max-seq-len=512`)
+
+## Development Workflow
+
+### Quick iteration loop
+
+```bash
+# Train a small model (~5 min)
+python -m scripts.base_train --depth=4 --max-seq-len=512 \
+    --device-batch-size=1 --total-batch-size=512 \
+    --num-iterations=20 --core-metric-every=-1
+
+# Evaluate
+python -m scripts.base_eval
+```
+
+### Data preparation
+
+```bash
+# Quick: single part
+python data/climbmix/prepare.py --part 0
+python data/climbmix/merge.py
+
+# Full dataset
+bash data/climbmix/prepare.sh
+```
+
+## Khoury Discovery Cluster
+
+### SSH Access
+
+```bash
+ssh zhu.shili@login.explorer.northeastern.edu
+```
+
+### Interactive GPU Session
+
+Request an interactive shell with a GPU:
+
+```bash
+srun --partition=sharing --nodes=1 --pty --gres=gpu:h100:1 --ntasks=1 --mem=80GB --time=4:00:00 /bin/bash
+srun --partition=gpu-interactive --nodes=1 --pty --gres=gpu:h200:1 --ntasks=1 --mem=141GB --time=2:00:00 /bin/bash
+```
+
+| Flag | Meaning |
+|---|---|
+| `--partition=sharing` | Target the sharing partition |
+| `--nodes=1` | Single node |
+| `--pty` | Allocate a pseudo-terminal (interactive) |
+| `--gres=gpu:h100:1` | Request 1x H100 GPU (change model/count as needed) |
+| `--ntasks=1` | One task |
+| `--mem=80GB` | Allocated memory |
+| `--time=4:00:00` | Wall-time limit of 4 hours |
+
+> **Tip:** Replace `h100` with `a100`, `v100-sxm2`, `l40s`, etc. to request a different GPU type.
+
+### Job Management
+
+```bash
+# List your running/pending jobs
+squeue -u $USER
+
+# Cancel all your jobs
+scancel -u $USER
+
+# Release a held job
+scontrol release <job_id>
+
+# Extend job time limit
+scontrol update jobid=<JOBID> TimeLimit=<NEW_TIME>
+```
+
+### Research Run
+
+```bash
+torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
+    --depth=12 --run="d12-single" --model-tag="d12"
+```
+
+### Chat CLI
+
+```bash
+python -m scripts.chat_cli -i base -g d12
+```
+
+## License
+
+By contributing, you agree that your contributions will be licensed under the same license as the project (see [LICENSE](LICENSE)).
