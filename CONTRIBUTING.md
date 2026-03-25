@@ -157,6 +157,9 @@ The dataloader uses **BOS-aligned best-fit packing** — 100% utilization with n
 
 ```bash
 ssh zhu.shili@login.explorer.northeastern.edu
+
+# If using Ghostty terminal, fix TERM compatibility before starting tmux
+TERM=xterm-256color tmux
 ```
 
 ### GPU Resource Monitor
