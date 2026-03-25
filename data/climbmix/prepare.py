@@ -28,7 +28,7 @@ from datasets import load_dataset
 # GPT-2 BPE tokenizer (max token value 50256 < 2^16, so uint16 is safe)
 enc = tiktoken.get_encoding("gpt2")
 
-DATA_DIR = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_DATA_DIR = os.path.dirname(os.path.abspath(__file__))
 HF_DATASET = "nvidia/Nemotron-ClimbMix"
 
 
@@ -39,9 +39,11 @@ def process(example):
     return {"ids": ids, "len": len(ids)}
 
 
-def prepare_part(part_idx, num_proc=32, val_ratio=0.0005, total_parts=10):
+def prepare_part(part_idx, output_dir=DEFAULT_DATA_DIR, num_proc=32, val_ratio=0.0005, total_parts=10):
     """Download and tokenize one part of the dataset."""
+    os.makedirs(output_dir, exist_ok=True)
     print(f"Loading part {part_idx} from {HF_DATASET}...")
+    print(f"Output directory: {output_dir}")
 
     # The dataset has 100 data files. Load a subset (10 files per part)
     # to avoid OOM from loading the entire 400B token dataset at once.
@@ -76,7 +78,7 @@ def prepare_part(part_idx, num_proc=32, val_ratio=0.0005, total_parts=10):
     # Write to binary files
     for split, dset in tokenized.items():
         arr_len = np.sum(dset["len"], dtype=np.uint64)
-        filename = os.path.join(DATA_DIR, f"part_{part_idx}_{split}.bin")
+        filename = os.path.join(output_dir, f"part_{part_idx}_{split}.bin")
         print(f"Writing {filename} ({arr_len:,} tokens)...")
 
         arr = np.memmap(filename, dtype=np.uint16, mode="w+", shape=(arr_len,))
@@ -106,6 +108,12 @@ if __name__ == "__main__":
         "--all", action="store_true", help="Prepare all 10 parts"
     )
     parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=DEFAULT_DATA_DIR,
+        help=f"Output directory for binary files (default: {DEFAULT_DATA_DIR})",
+    )
+    parser.add_argument(
         "--num-proc",
         type=int,
         default=32,
@@ -115,6 +123,6 @@ if __name__ == "__main__":
 
     if args.all:
         for i in range(10):
-            prepare_part(i, num_proc=args.num_proc)
+            prepare_part(i, output_dir=args.output_dir, num_proc=args.num_proc)
     else:
-        prepare_part(args.part, num_proc=args.num_proc)
+        prepare_part(args.part, output_dir=args.output_dir, num_proc=args.num_proc)

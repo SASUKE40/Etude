@@ -117,32 +117,53 @@ The project uses the [NVIDIA Nemotron-ClimbMix](https://huggingface.co/datasets/
 
 #### Path 1: Binary Files (Recommended)
 
-Downloads from HuggingFace, tokenizes with GPT-2 BPE (`tiktoken`), and produces `train.bin` / `val.bin` (uint16 memmap) in `data/climbmix/`.
+Downloads from HuggingFace, tokenizes with GPT-2 BPE (`tiktoken`), and produces `train.bin` / `val.bin` (uint16 memmap).
+
+> **Important:** Home directory has limited quota. Use `--output-dir` to write to `/scratch` and set `HF_HOME` for the HuggingFace cache.
+
+**ClimbMix (pretraining — 400B tokens):**
 
 ```bash
-# Set HF cache to scratch (home directory has limited quota)
-export HF_HOME=/scratch/zhu.shili/hf_cache
-mkdir -p $HF_HOME
+# Set HF cache to scratch
+export HF_HOME=/scratch/$USER/hf_cache
 
-# Quick: single part (sufficient for testing)
-python data/climbmix/prepare.py --part 0 --num-proc 48
-python data/climbmix/merge.py
-
-# Full dataset (all 10 parts + merge)
+# Full dataset (all 10 parts + merge, outputs to /scratch)
 bash data/climbmix/prepare.sh
-# This runs prepare.py for parts 0–9, then merge.py automatically
 
-# Prepare a specific part with custom workers
-python data/climbmix/prepare.py --part 3 --num-proc 48
+# Or manually, one part at a time
+python data/climbmix/prepare.py --part 0 --output-dir /scratch/$USER/etude_data/climbmix --num-proc 48
+python data/climbmix/merge.py --data-dir /scratch/$USER/etude_data/climbmix
+
+# Symlink back to project for training
+ln -sf /scratch/$USER/etude_data/climbmix/train.bin data/climbmix/train.bin
+ln -sf /scratch/$USER/etude_data/climbmix/val.bin data/climbmix/val.bin
 ```
 
-> **Note:** Data preparation is CPU-only — no GPU needed. Run it on the login node or a CPU-only job. Each part loads 10 of 100 parquet files from HuggingFace to avoid OOM.
+**Rust (fine-tuning — [The Stack Dedup](https://huggingface.co/datasets/bigcode/the-stack-dedup)):**
+
+```bash
+export HF_HOME=/scratch/$USER/hf_cache
+
+# Full prepare (outputs to /scratch)
+bash data/rust/prepare.sh
+
+# Or manually
+python data/rust/prepare.py --output-dir /scratch/$USER/etude_data/rust --num-proc 48
+
+# Symlink back to project for training
+ln -sf /scratch/$USER/etude_data/rust/train.bin data/rust/train.bin
+ln -sf /scratch/$USER/etude_data/rust/val.bin data/rust/val.bin
+```
+
+> **Note:** Data preparation is CPU-only — no GPU needed. Run it on the login node or a CPU-only job. Each ClimbMix part loads 10 of 100 parquet files from HuggingFace to avoid OOM.
 
 | Script | Purpose |
 |---|---|
-| `data/climbmix/prepare.py` | Download & tokenize individual parts (0–9) |
+| `data/climbmix/prepare.py` | Download & tokenize ClimbMix parts (0–9) |
 | `data/climbmix/merge.py` | Merge part files into `train.bin` / `val.bin` |
-| `data/climbmix/prepare.sh` | End-to-end script (all parts + merge) |
+| `data/climbmix/prepare.sh` | End-to-end ClimbMix script (all parts + merge) |
+| `data/rust/prepare.py` | Download & tokenize Rust subset |
+| `data/rust/prepare.sh` | End-to-end Rust script |
 
 #### Path 2: Parquet Streaming
 

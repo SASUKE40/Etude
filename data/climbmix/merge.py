@@ -8,10 +8,11 @@ Run this after prepare.py has produced part_*_train.bin and part_*_val.bin files
 """
 
 import os
+import argparse
 import numpy as np
 from tqdm import tqdm
 
-DATA_DIR = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_DATA_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 def merge_bin_files(input_files, output_file):
@@ -50,12 +51,23 @@ def merge_bin_files(input_files, output_file):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Merge binary token files")
+    parser.add_argument(
+        "--data-dir",
+        type=str,
+        default=DEFAULT_DATA_DIR,
+        help=f"Directory containing part files (default: {DEFAULT_DATA_DIR})",
+    )
+    args = parser.parse_args()
+    data_dir = args.data_dir
+
+    print(f"Merging from: {data_dir}")
     print("Merging training files...")
-    train_files = [os.path.join(DATA_DIR, f"part_{i}_train.bin") for i in range(10)]
-    merge_bin_files(train_files, os.path.join(DATA_DIR, "train.bin"))
+    train_files = [os.path.join(data_dir, f"part_{i}_train.bin") for i in range(10)]
+    merge_bin_files(train_files, os.path.join(data_dir, "train.bin"))
 
     print("\nMerging validation files...")
-    val_files = [os.path.join(DATA_DIR, f"part_{i}_val.bin") for i in range(10)]
-    merge_bin_files(val_files, os.path.join(DATA_DIR, "val.bin"))
+    val_files = [os.path.join(data_dir, f"part_{i}_val.bin") for i in range(10)]
+    merge_bin_files(val_files, os.path.join(data_dir, "val.bin"))
 
     print("\nDone!")

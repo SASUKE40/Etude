@@ -5,8 +5,11 @@ Usage:
     # Prepare with default settings
     python data/rust/prepare.py
 
+    # Custom output directory (e.g. scratch to avoid home quota)
+    python data/rust/prepare.py --output-dir /scratch/$USER/etude_data/rust
+
     # Custom number of workers
-    python data/rust/prepare.py --num-proc 32
+    python data/rust/prepare.py --num-proc 48
 
 Dataset: https://huggingface.co/datasets/bigcode/the-stack-dedup
 Language: Rust
@@ -23,7 +26,6 @@ from datasets import load_dataset
 # GPT-2 BPE tokenizer (max token value 50256 < 2^16, so uint16 is safe)
 enc = tiktoken.get_encoding("gpt2")
 
-DATA_DIR = os.path.dirname(os.path.abspath(__file__))
 HF_DATASET = "bigcode/the-stack-dedup"
 
 
@@ -34,9 +36,11 @@ def process(example):
     return {"ids": ids, "len": len(ids)}
 
 
-def prepare(num_proc=32, val_ratio=0.0005):
+def prepare(output_dir, num_proc=32, val_ratio=0.0005):
     """Download and tokenize the Rust subset."""
+    os.makedirs(output_dir, exist_ok=True)
     print(f"Loading Rust subset from {HF_DATASET}...")
+    print(f"Output directory: {output_dir}")
 
     dataset = load_dataset(
         HF_DATASET,
@@ -64,7 +68,7 @@ def prepare(num_proc=32, val_ratio=0.0005):
     # Write to binary files
     for split, dset in tokenized.items():
         arr_len = np.sum(dset["len"], dtype=np.uint64)
-        filename = os.path.join(DATA_DIR, f"{split}.bin")
+        filename = os.path.join(output_dir, f"{split}.bin")
         print(f"Writing {filename} ({arr_len:,} tokens)...")
 
         arr = np.memmap(filename, dtype=np.uint16, mode="w+", shape=(arr_len,))
@@ -84,8 +88,15 @@ def prepare(num_proc=32, val_ratio=0.0005):
 
 
 if __name__ == "__main__":
+    default_output = os.path.dirname(os.path.abspath(__file__))
     parser = argparse.ArgumentParser(
         description="Prepare Rust data from The Stack Dedup for training"
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=default_output,
+        help=f"Output directory for binary files (default: {default_output})",
     )
     parser.add_argument(
         "--num-proc",
@@ -95,4 +106,4 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    prepare(num_proc=args.num_proc)
+    prepare(output_dir=args.output_dir, num_proc=args.num_proc)
