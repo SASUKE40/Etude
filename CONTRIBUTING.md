@@ -174,10 +174,16 @@ python data/climbmix/merge.py --data-dir /scratch/$USER/etude_data/climbmix
 
 #### Rust fine-tuning data
 
-After ClimbMix pretraining, fine-tune on Rust code from [The Stack Dedup](https://huggingface.co/datasets/bigcode/the-stack-dedup):
+After ClimbMix pretraining, fine-tune on Rust code from [The Stack Dedup](https://huggingface.co/datasets/bigcode/the-stack-dedup).
+
+> **Important:** This is a gated dataset. You must:
+> 1. Accept the terms at https://huggingface.co/datasets/bigcode/the-stack-dedup
+> 2. Login with `huggingface-cli login` (get a token from https://huggingface.co/settings/tokens with "Read" access)
 
 ```bash
 export HF_HOME=/scratch/$USER/hf_cache
+
+huggingface-cli login
 
 # Full prepare (outputs to /scratch)
 bash data/rust/prepare.sh
