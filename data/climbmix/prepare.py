@@ -39,16 +39,20 @@ def process(example):
     return {"ids": ids, "len": len(ids)}
 
 
-def prepare_part(part_idx, num_proc=32, val_ratio=0.0005):
+def prepare_part(part_idx, num_proc=32, val_ratio=0.0005, total_parts=10):
     """Download and tokenize one part of the dataset."""
     print(f"Loading part {part_idx} from {HF_DATASET}...")
 
-    # Load the dataset split for this part
-    # Nemotron-ClimbMix is organized as JSONL parts
+    # The dataset has 100 data files. Load a subset (10 files per part)
+    # to avoid OOM from loading the entire 400B token dataset at once.
+    files_per_part = 100 // total_parts
+    start = part_idx * files_per_part
+    end = start + files_per_part
+    data_files = [f"data/train-{i:05d}-of-00100.parquet" for i in range(start, end)]
     dataset = load_dataset(
         HF_DATASET,
+        data_files=data_files,
         split="train",
-        streaming=False,
         num_proc=num_proc,
     )
 
