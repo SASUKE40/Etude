@@ -152,7 +152,7 @@ def parquets_iter_batched(split, start=0, step=1):
 # Download utility — uses HuggingFace datasets to download and convert to parquet
 
 def download_part(part_idx, data_dir, num_proc=8):
-    """Download one JSONL part from HuggingFace and save as parquet."""
+    """Download one JSONL part from HuggingFace and save as parquet using streaming to avoid OOM."""
     from datasets import load_dataset
     import pyarrow as pa
     import pyarrow.parquet as pq_write
@@ -166,25 +166,46 @@ def download_part(part_idx, data_dir, num_proc=8):
     print(f"Downloading part {part_idx} from {HF_DATASET}...")
     try:
         data_files = [f"part_{part_idx}.jsonl"]
+        # Use streaming to avoid loading entire JSONL (~16GB) into memory
         dataset = load_dataset(
             HF_DATASET,
             data_files=data_files,
             split="train",
-            num_proc=num_proc,
+            streaming=True,
         )
 
-        # Save as parquet with 'text' column
-        # Keep only the 'text' column for the dataloader
-        if "text" not in dataset.column_names:
-            print(f"  ERROR: 'text' column not found in part {part_idx}. Columns: {dataset.column_names}")
-            return False
-
-        dataset = dataset.select_columns(["text"])
-
         temp_path = filepath + ".tmp"
-        dataset.to_parquet(temp_path)
+        writer = None
+        num_rows = 0
+        batch_size = 10000
+        batch = []
+
+        for example in dataset:
+            text = example.get("text")
+            if text is None:
+                continue
+            batch.append(text)
+            if len(batch) >= batch_size:
+                table = pa.table({"text": batch})
+                if writer is None:
+                    writer = pq_write.ParquetWriter(temp_path, table.schema)
+                writer.write_table(table)
+                num_rows += len(batch)
+                batch = []
+
+        # Write remaining
+        if batch:
+            table = pa.table({"text": batch})
+            if writer is None:
+                writer = pq_write.ParquetWriter(temp_path, table.schema)
+            writer.write_table(table)
+            num_rows += len(batch)
+
+        if writer is not None:
+            writer.close()
+
         os.rename(temp_path, filepath)
-        print(f"  Saved part {part_idx} -> {filepath} ({len(dataset):,} rows)")
+        print(f"  Saved part {part_idx} -> {filepath} ({num_rows:,} rows)")
         return True
     except Exception as e:
         print(f"  ERROR downloading part {part_idx}: {e}")
