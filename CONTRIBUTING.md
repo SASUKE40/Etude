@@ -214,16 +214,45 @@ scontrol release <job_id>
 scontrol update jobid=<JOBID> TimeLimit=<NEW_TIME>
 ```
 
-### Research Run
+### Training with Checkpoints
+
+When you only have limited GPU time (e.g. 1 hour per session), use `--save-every` to periodically save checkpoints and `--resume-from-step` to continue across sessions.
+
+#### Full training (depth=24, default)
+
+```bash
+# First session — start training
+srun --partition=sharing --nodes=1 --pty --gres=gpu:h100:1 --ntasks=1 --mem=80GB --time=1:00:00 /bin/bash
+torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
+    --save-every=100 --run="full-train" --model-tag="d24"
+
+# Next session — resume from last checkpoint
+srun --partition=sharing --nodes=1 --pty --gres=gpu:h100:1 --ntasks=1 --mem=80GB --time=1:00:00 /bin/bash
+torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
+    --save-every=100 --run="full-train" --model-tag="d24" \
+    --resume-from-step=<LAST_STEP>
+```
+
+#### Smaller model (depth=12)
 
 ```bash
 torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
-    --depth=12 --run="d12-single" --model-tag="d12"
+    --depth=12 --save-every=100 --run="d12-single" --model-tag="d12"
 ```
+
+#### Check saved checkpoints
+
+```bash
+ls ~/base_checkpoints/d24/   # full model
+ls ~/base_checkpoints/d12/   # smaller model
+```
+
+> **Tip:** Tune `--save-every` based on step speed. Save often enough that you don't lose more than ~5 min of work if the job gets killed.
 
 ### Chat CLI
 
 ```bash
+python -m scripts.chat_cli -i base -g d24
 python -m scripts.chat_cli -i base -g d12
 ```
 
