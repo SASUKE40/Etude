@@ -131,21 +131,62 @@ def list_parquet_files(data_dir=None, warn_on_legacy=False):
     return parquet_paths
 
 
-def parquets_iter_batched(split, start=0, step=1):
+def parquets_iter_batched(split, start=0, step=1, batch_size=10000):
     """
-    Iterate through the dataset, in batches of underlying row_groups for efficiency.
-    - split can be "train" or "val". the last parquet file will be val.
+    Iterate through the dataset, in batches of text strings.
+
+    Auto-selects local parquet files if available, otherwise streams from HuggingFace.
+    - split can be "train" or "val". the last parquet file / part_99 will be val.
     - start/step are useful for skipping rows in DDP. e.g. start=rank, step=world_size
     """
     assert split in ["train", "val"], "split must be 'train' or 'val'"
-    parquet_paths = list_parquet_files()
-    parquet_paths = parquet_paths[:-1] if split == "train" else parquet_paths[-1:]
-    for filepath in parquet_paths:
-        pf = pq.ParquetFile(filepath)
-        for rg_idx in range(start, pf.num_row_groups, step):
-            rg = pf.read_row_group(rg_idx)
-            texts = rg.column("text").to_pylist()
-            yield texts
+
+    try:
+        parquet_paths = list_parquet_files()
+        if parquet_paths:
+            # Local parquet path
+            parquet_paths = parquet_paths[:-1] if split == "train" else parquet_paths[-1:]
+            for filepath in parquet_paths:
+                pf = pq.ParquetFile(filepath)
+                for rg_idx in range(start, pf.num_row_groups, step):
+                    rg = pf.read_row_group(rg_idx)
+                    texts = rg.column("text").to_pylist()
+                    yield texts
+            return
+    except (FileNotFoundError, OSError):
+        pass
+
+    # HuggingFace streaming fallback
+    from datasets import load_dataset
+
+    if split == "val":
+        data_files = ["part_99.jsonl"]
+    else:
+        data_files = [f"part_{i}.jsonl" for i in range(99)]
+
+    dataset = load_dataset(
+        HF_DATASET,
+        data_files=data_files,
+        split="train",
+        streaming=True,
+    )
+
+    batch = []
+    row_idx = 0
+    for example in dataset:
+        if row_idx % step != start:
+            row_idx += 1
+            continue
+        row_idx += 1
+        text = example.get("text")
+        if text is None:
+            continue
+        batch.append(text)
+        if len(batch) >= batch_size:
+            yield batch
+            batch = []
+    if batch:
+        yield batch
 
 
 # -----------------------------------------------------------------------------

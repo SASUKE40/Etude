@@ -20,11 +20,19 @@ import torch
 import pyarrow.parquet as pq
 
 from etude.common import get_dist_info
-from etude.dataset import list_parquet_files
+from etude.dataset import list_parquet_files, HF_DATASET, DATA_DIR
 
-def _document_batches(split, resume_state_dict, tokenizer_batch_size):
+def _has_local_parquets():
+    """Check if local parquet files exist for training."""
+    try:
+        paths = list_parquet_files()
+        return len(paths) > 0
+    except (FileNotFoundError, OSError):
+        return False
+
+def _document_batches_parquet(split, resume_state_dict, tokenizer_batch_size):
     """
-    Infinite iterator over document batches (list of text strings) from parquet files.
+    Infinite iterator over document batches from local parquet files.
 
     Handles DDP sharding and approximate resume. Each yield is (text_batch, (pq_idx, rg_idx, epoch))
     where text_batch is a list of document strings, indices track position for resumption,
@@ -32,7 +40,7 @@ def _document_batches(split, resume_state_dict, tokenizer_batch_size):
     """
     ddp, ddp_rank, ddp_local_rank, ddp_world_size = get_dist_info()
 
-    warn_on_legacy = ddp_rank == 0 and split == "train" # rank 0 on train split will warn on legacy
+    warn_on_legacy = ddp_rank == 0 and split == "train"
     parquet_paths = list_parquet_files(warn_on_legacy=warn_on_legacy)
     assert len(parquet_paths) != 0, "No dataset parquet files found, did you run dataset.py?"
     parquet_paths = parquet_paths[:-1] if split == "train" else parquet_paths[-1:]
@@ -44,20 +52,19 @@ def _document_batches(split, resume_state_dict, tokenizer_batch_size):
     pq_idx = resume_pq_idx
     epoch = resume_epoch
 
-    while True:  # iterate infinitely (multi-epoch)
+    while True:
         pq_idx = resume_pq_idx if first_pass else 0
         while pq_idx < len(parquet_paths):
             filepath = parquet_paths[pq_idx]
             pf = pq.ParquetFile(filepath)
-            # Start from resume point if resuming on same file, otherwise from DDP rank
             if first_pass and (resume_rg_idx is not None) and (pq_idx == resume_pq_idx):
                 base_idx = resume_rg_idx // ddp_world_size
-                base_idx += 1  # advance by 1 so we don't repeat data after resuming
+                base_idx += 1
                 rg_idx = base_idx * ddp_world_size + ddp_rank
                 if rg_idx >= pf.num_row_groups:
                     pq_idx += 1
                     continue
-                resume_rg_idx = None  # only do this once
+                resume_rg_idx = None
             else:
                 rg_idx = ddp_rank
             while rg_idx < pf.num_row_groups:
@@ -69,6 +76,77 @@ def _document_batches(split, resume_state_dict, tokenizer_batch_size):
             pq_idx += 1
         first_pass = False
         epoch += 1
+
+
+def _document_batches_hf(split, resume_state_dict, tokenizer_batch_size):
+    """
+    Infinite iterator over document batches streamed from HuggingFace.
+
+    No local download required — uses HuggingFace datasets streaming mode.
+    Handles DDP sharding. Resume is approximate (skips N batches).
+    """
+    from datasets import load_dataset
+
+    ddp, ddp_rank, ddp_local_rank, ddp_world_size = get_dist_info()
+
+    # Use last part (part_99) as validation, rest as train
+    if split == "val":
+        data_files = ["part_99.jsonl"]
+    else:
+        data_files = [f"part_{i}.jsonl" for i in range(99)]
+
+    resume_batch_idx = resume_state_dict.get("batch_idx", 0) if resume_state_dict else 0
+    resume_epoch = resume_state_dict.get("epoch", 1) if resume_state_dict else 1
+    epoch = resume_epoch
+
+    while True:
+        dataset = load_dataset(
+            HF_DATASET,
+            data_files=data_files,
+            split="train",
+            streaming=True,
+        )
+
+        batch = []
+        batch_idx = 0
+        row_idx = 0
+
+        for example in dataset:
+            # DDP sharding: each rank takes every Nth row
+            if row_idx % ddp_world_size != ddp_rank:
+                row_idx += 1
+                continue
+            row_idx += 1
+
+            text = example.get("text")
+            if text is None:
+                continue
+            batch.append(text)
+
+            if len(batch) >= tokenizer_batch_size:
+                # Skip batches for approximate resume
+                if batch_idx < resume_batch_idx:
+                    batch = []
+                    batch_idx += 1
+                    continue
+                resume_batch_idx = 0  # only skip on first epoch
+                yield batch, (0, batch_idx, epoch)
+                batch = []
+                batch_idx += 1
+
+        # Yield remaining
+        if batch:
+            yield batch, (0, batch_idx, epoch)
+
+        epoch += 1
+
+
+def _document_batches(split, resume_state_dict, tokenizer_batch_size):
+    """Auto-select local parquet or HuggingFace streaming based on data availability."""
+    if _has_local_parquets():
+        yield from _document_batches_parquet(split, resume_state_dict, tokenizer_batch_size)
+    else:
+        yield from _document_batches_hf(split, resume_state_dict, tokenizer_batch_size)
 
 
 def tokenizing_distributed_data_loader_with_state_bos_bestfit(
