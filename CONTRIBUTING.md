@@ -130,6 +130,10 @@ bash data/climbmix/prepare.sh
 ssh zhu.shili@login.explorer.northeastern.edu
 ```
 
+### GPU Resource Monitor
+
+Check available GPU resources on the cluster: [GPU Monitor Dashboard](https://ood.explorer.northeastern.edu/pun/sys/dashboard/apps/show/gpu-monitor)
+
 ### Interactive GPU Session
 
 Request an interactive shell with a GPU:
