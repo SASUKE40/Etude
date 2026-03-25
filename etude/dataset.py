@@ -30,33 +30,45 @@ index_to_filename = lambda index: f"shard_{index:05d}.parquet"
 base_dir = get_base_dir()
 DATA_DIR = os.path.join(base_dir, "base_data_climbmix")
 
-# Binary data directory (prepared by data/climbmix/prepare.py)
-BIN_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "climbmix")
+# Binary data directories
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BIN_DATA_DIR = os.path.join(_PROJECT_ROOT, "data", "climbmix")
+BIN_DATA_DIR_RUST = os.path.join(_PROJECT_ROOT, "data", "rust")
 
 # -----------------------------------------------------------------------------
 # Binary data support (nanoGPT-style memmap)
 
-def get_bin_data_path(split):
-    """Return the path to the binary data file for a given split."""
+BIN_DATA_DIRS = {
+    "climbmix": BIN_DATA_DIR,
+    "rust": BIN_DATA_DIR_RUST,
+}
+
+
+def get_bin_data_path(split, dataset="climbmix"):
+    """Return the path to the binary data file for a given split and dataset."""
+    data_dir = BIN_DATA_DIRS.get(dataset, BIN_DATA_DIR)
     if split == "train":
-        return os.path.join(BIN_DATA_DIR, "train.bin")
+        return os.path.join(data_dir, "train.bin")
     elif split == "val":
-        return os.path.join(BIN_DATA_DIR, "val.bin")
+        return os.path.join(data_dir, "val.bin")
     raise ValueError(f"Unknown split: {split}")
 
 
-def has_bin_data():
+def has_bin_data(dataset="climbmix"):
     """Check if binary data files exist."""
-    return os.path.exists(get_bin_data_path("train"))
+    return os.path.exists(get_bin_data_path("train", dataset=dataset))
 
 
-def load_bin_data(split):
+def load_bin_data(split, dataset="climbmix"):
     """Load a binary data file as a numpy memmap."""
-    path = get_bin_data_path(split)
+    path = get_bin_data_path(split, dataset=dataset)
     if not os.path.exists(path):
+        prepare_cmd = {
+            "climbmix": "python data/climbmix/prepare.py && python data/climbmix/merge.py",
+            "rust": "python data/rust/prepare.py",
+        }.get(dataset, f"Prepare data in {path}")
         raise FileNotFoundError(
-            f"Binary data not found at {path}. "
-            f"Run: python data/climbmix/prepare.py && python data/climbmix/merge.py"
+            f"Binary data not found at {path}. Run: {prepare_cmd}"
         )
     return np.memmap(path, dtype=np.uint16, mode="r")
 
