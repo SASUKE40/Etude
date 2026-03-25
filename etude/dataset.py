@@ -152,11 +152,14 @@ def parquets_iter_batched(split, start=0, step=1):
 # Download utility — uses HuggingFace datasets to download and convert to parquet
 
 def download_part(part_idx, data_dir, num_proc=8):
-    """Download one JSONL part from HuggingFace and save as parquet using streaming to avoid OOM."""
-    from datasets import load_dataset
+    """Download one JSONL part from HuggingFace and convert to parquet.
+
+    Uses huggingface_hub for fast file download, then converts JSONL to parquet locally.
+    """
+    from huggingface_hub import hf_hub_download
     import pyarrow as pa
     import pyarrow.parquet as pq_write
-    from tqdm import tqdm
+    import json
 
     filename = f"part_{part_idx}.parquet"
     filepath = os.path.join(data_dir, filename)
@@ -166,35 +169,33 @@ def download_part(part_idx, data_dir, num_proc=8):
 
     print(f"Downloading part {part_idx} from {HF_DATASET}...")
     try:
-        data_files = [f"part_{part_idx}.jsonl"]
-        # Use streaming to avoid loading entire JSONL (~16GB) into memory
-        dataset = load_dataset(
-            HF_DATASET,
-            data_files=data_files,
-            split="train",
-            streaming=True,
+        # Fast download via huggingface_hub (uses hf_transfer if available)
+        jsonl_path = hf_hub_download(
+            repo_id=HF_DATASET,
+            filename=f"part_{part_idx}.jsonl",
+            repo_type="dataset",
         )
 
+        # Convert JSONL to parquet in batches to limit memory usage
         temp_path = filepath + ".tmp"
         writer = None
         num_rows = 0
-        batch_size = 10000
+        batch_size = 50000
         batch = []
 
-        pbar = tqdm(desc=f"  Part {part_idx}", unit=" rows", unit_scale=True)
-        for example in dataset:
-            text = example.get("text")
-            if text is None:
-                continue
-            batch.append(text)
-            if len(batch) >= batch_size:
-                table = pa.table({"text": batch})
-                if writer is None:
-                    writer = pq_write.ParquetWriter(temp_path, table.schema)
-                writer.write_table(table)
-                num_rows += len(batch)
-                pbar.update(len(batch))
-                batch = []
+        with open(jsonl_path, "r") as f:
+            for line in f:
+                text = json.loads(line).get("text")
+                if text is None:
+                    continue
+                batch.append(text)
+                if len(batch) >= batch_size:
+                    table = pa.table({"text": batch})
+                    if writer is None:
+                        writer = pq_write.ParquetWriter(temp_path, table.schema)
+                    writer.write_table(table)
+                    num_rows += len(batch)
+                    batch = []
 
         # Write remaining
         if batch:
@@ -203,9 +204,6 @@ def download_part(part_idx, data_dir, num_proc=8):
                 writer = pq_write.ParquetWriter(temp_path, table.schema)
             writer.write_table(table)
             num_rows += len(batch)
-            pbar.update(len(batch))
-
-        pbar.close()
 
         if writer is not None:
             writer.close()
