@@ -156,6 +156,7 @@ def download_part(part_idx, data_dir, num_proc=8):
     from datasets import load_dataset
     import pyarrow as pa
     import pyarrow.parquet as pq_write
+    from tqdm import tqdm
 
     filename = f"part_{part_idx}.parquet"
     filepath = os.path.join(data_dir, filename)
@@ -180,6 +181,7 @@ def download_part(part_idx, data_dir, num_proc=8):
         batch_size = 10000
         batch = []
 
+        pbar = tqdm(desc=f"  Part {part_idx}", unit=" rows", unit_scale=True)
         for example in dataset:
             text = example.get("text")
             if text is None:
@@ -191,6 +193,7 @@ def download_part(part_idx, data_dir, num_proc=8):
                     writer = pq_write.ParquetWriter(temp_path, table.schema)
                 writer.write_table(table)
                 num_rows += len(batch)
+                pbar.update(len(batch))
                 batch = []
 
         # Write remaining
@@ -200,6 +203,9 @@ def download_part(part_idx, data_dir, num_proc=8):
                 writer = pq_write.ParquetWriter(temp_path, table.schema)
             writer.write_table(table)
             num_rows += len(batch)
+            pbar.update(len(batch))
+
+        pbar.close()
 
         if writer is not None:
             writer.close()
@@ -248,8 +254,10 @@ if __name__ == "__main__":
     print(f"Validation part: {args.val_part}")
     print()
 
+    from tqdm import tqdm
+
     successful = 0
-    for part_idx in parts_to_download:
+    for part_idx in tqdm(parts_to_download, desc="Overall", unit="part"):
         if download_part(part_idx, DATA_DIR, num_proc=args.num_workers):
             successful += 1
 
