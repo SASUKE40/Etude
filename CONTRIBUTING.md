@@ -113,18 +113,45 @@ python -m scripts.base_eval
 
 ### Data Preparation
 
-The project uses the [NVIDIA Nemotron-ClimbMix](https://huggingface.co/datasets/nvidia/Nemotron-ClimbMix) dataset (400B tokens). There are two paths:
+The project uses the [NVIDIA Nemotron-ClimbMix](https://huggingface.co/datasets/nvidia/Nemotron-ClimbMix) dataset (400B tokens). The training pipeline uses **parquet streaming** — raw text parquet shards are downloaded, a custom BPE tokenizer is trained on them, and the dataloader tokenizes on-the-fly during training.
 
-#### Path 1: Binary Files (Recommended)
+> **Important:** Home directory has limited quota. Set `HF_HOME` to `/scratch` for the HuggingFace cache.
 
-Downloads from HuggingFace, tokenizes with GPT-2 BPE (`tiktoken`), and produces `train.bin` / `val.bin` (uint16 memmap).
-
-> **Important:** Home directory has limited quota. Use `--output-dir` to write to `/scratch` and set `HF_HOME` for the HuggingFace cache.
-
-**ClimbMix (pretraining — 400B tokens):**
+#### Step 1: Download parquet shards (CPU-only)
 
 ```bash
-# Set HF cache to scratch
+export HF_HOME=/scratch/$USER/hf_cache
+
+# Download all shards
+python -m etude.dataset -n -1
+
+# Or ~170 shards for a quick start
+python -m etude.dataset -n 170
+```
+
+#### Step 2: Train tokenizer (CPU-only)
+
+Trains a custom 32K vocab BPE tokenizer (GPT-4 style) on the downloaded parquets.
+
+```bash
+python -m scripts.tok_train
+```
+
+#### Step 3: Train model (needs GPU)
+
+The dataloader reads parquets and tokenizes on-the-fly with the custom tokenizer.
+
+```bash
+srun --partition=sharing --nodes=1 --pty --gres=gpu:h100:1 --ntasks=1 --mem=80GB --time=1:00:00 /bin/bash
+torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
+    --save-every=100 --run="full-train" --model-tag="d24"
+```
+
+#### Alternative: Binary files (nanoGPT-style)
+
+A separate path uses GPT-2 tokenizer to produce pre-tokenized binary files. This is **not** the main training pipeline but useful for nanoGPT-compatible workflows.
+
+```bash
 export HF_HOME=/scratch/$USER/hf_cache
 
 # Full dataset (all 10 parts + merge, outputs to /scratch)
@@ -133,13 +160,17 @@ bash data/climbmix/prepare.sh
 # Or manually, one part at a time
 python data/climbmix/prepare.py --part 0 --output-dir /scratch/$USER/etude_data/climbmix --num-proc 48
 python data/climbmix/merge.py --data-dir /scratch/$USER/etude_data/climbmix
-
-# Symlink back to project for training
-ln -sf /scratch/$USER/etude_data/climbmix/train.bin data/climbmix/train.bin
-ln -sf /scratch/$USER/etude_data/climbmix/val.bin data/climbmix/val.bin
 ```
 
-**Rust (fine-tuning — [The Stack Dedup](https://huggingface.co/datasets/bigcode/the-stack-dedup)):**
+| Script | Purpose |
+|---|---|
+| `data/climbmix/prepare.py` | Download & tokenize ClimbMix parts (0–9) with GPT-2 BPE |
+| `data/climbmix/merge.py` | Merge part files into `train.bin` / `val.bin` |
+| `data/climbmix/prepare.sh` | End-to-end ClimbMix binary prep script |
+
+#### Rust fine-tuning data
+
+After ClimbMix pretraining, fine-tune on Rust code from [The Stack Dedup](https://huggingface.co/datasets/bigcode/the-stack-dedup):
 
 ```bash
 export HF_HOME=/scratch/$USER/hf_cache
@@ -149,32 +180,6 @@ bash data/rust/prepare.sh
 
 # Or manually
 python data/rust/prepare.py --output-dir /scratch/$USER/etude_data/rust --num-proc 48
-
-# Symlink back to project for training
-ln -sf /scratch/$USER/etude_data/rust/train.bin data/rust/train.bin
-ln -sf /scratch/$USER/etude_data/rust/val.bin data/rust/val.bin
-```
-
-> **Note:** Data preparation is CPU-only — no GPU needed. Run it on the login node or a CPU-only job. Each ClimbMix part loads 10 of 100 parquet files from HuggingFace to avoid OOM.
-
-| Script | Purpose |
-|---|---|
-| `data/climbmix/prepare.py` | Download & tokenize ClimbMix parts (0–9) |
-| `data/climbmix/merge.py` | Merge part files into `train.bin` / `val.bin` |
-| `data/climbmix/prepare.sh` | End-to-end ClimbMix script (all parts + merge) |
-| `data/rust/prepare.py` | Download & tokenize Rust subset |
-| `data/rust/prepare.sh` | End-to-end Rust script |
-
-#### Path 2: Parquet Streaming
-
-Downloads parquet shards and tokenizes on-the-fly during training.
-
-```bash
-# Download ~170 shards (enough for GPT-2 scale training)
-python -m etude.dataset -n 170
-
-# Download all shards
-python -m etude.dataset -n -1
 ```
 
 The dataloader uses **BOS-aligned best-fit packing** — 100% utilization with no padding. Data is automatically sharded across ranks for DDP training.
