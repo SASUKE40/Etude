@@ -5,28 +5,23 @@ Supports two data formats:
 1. Binary (.bin) files — pre-tokenized with GPT-2 tokenizer, loaded via numpy memmap.
    Prepare with: python data/climbmix/prepare.py && python data/climbmix/merge.py
 2. Parquet files — raw text, tokenized on-the-fly by the dataloader.
-   Download with: python -m etude.dataset -n 170
+   Download with: python -m etude.dataset -n 10
 
 Dataset: https://huggingface.co/datasets/nvidia/Nemotron-ClimbMix
+Community raw text version: https://huggingface.co/datasets/OptimalScale/ClimbMix
 """
 
 import os
 import argparse
-import time
-import requests
 import numpy as np
 import pyarrow.parquet as pq
-from multiprocessing import Pool
 
 from etude.common import get_base_dir
 
 # -----------------------------------------------------------------------------
 # Dataset configuration
 
-HF_DATASET = "nvidia/Nemotron-ClimbMix"
-BASE_URL = f"https://huggingface.co/datasets/{HF_DATASET}/resolve/main"
-MAX_SHARD = 6542
-index_to_filename = lambda index: f"shard_{index:05d}.parquet"
+HF_DATASET = "OptimalScale/ClimbMix"
 base_dir = get_base_dir()
 DATA_DIR = os.path.join(base_dir, "base_data_climbmix")
 
@@ -35,14 +30,16 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN_DATA_DIR = os.path.join(_PROJECT_ROOT, "data", "climbmix")
 BIN_DATA_DIR_RUST = os.path.join(_PROJECT_ROOT, "data", "rust")
 
-# -----------------------------------------------------------------------------
-# Binary data support (nanoGPT-style memmap)
-
 BIN_DATA_DIRS = {
     "climbmix": BIN_DATA_DIR,
     "rust": BIN_DATA_DIR_RUST,
 }
 
+# Total number of JSONL files in the dataset (part_0.jsonl to part_99.jsonl)
+TOTAL_PARTS = 100
+
+# -----------------------------------------------------------------------------
+# Binary data support (nanoGPT-style memmap)
 
 def get_bin_data_path(split, dataset="climbmix"):
     """Return the path to the binary data file for a given split and dataset."""
@@ -112,9 +109,9 @@ def list_parquet_files(data_dir=None, warn_on_legacy=False):
             print()
             print(f"  Could not find: {data_dir}")
             print()
-            print("  To download the Nemotron-ClimbMix dataset, run:")
+            print("  To download the ClimbMix dataset, run:")
             print()
-            print("    python -m etude.dataset -n 170     # download ~170 shards")
+            print("    python -m etude.dataset -n 10     # download 10 parts")
             print()
             print("  Or prepare binary data for nanoGPT-style training:")
             print()
@@ -152,75 +149,87 @@ def parquets_iter_batched(split, start=0, step=1):
 
 
 # -----------------------------------------------------------------------------
-# Download utility
+# Download utility — uses HuggingFace datasets to download and convert to parquet
 
-def download_single_file(index):
-    """Downloads a single file index, with retries and backoff."""
-    filename = index_to_filename(index)
-    filepath = os.path.join(DATA_DIR, filename)
+def download_part(part_idx, data_dir, num_proc=8):
+    """Download one JSONL part from HuggingFace and save as parquet."""
+    from datasets import load_dataset
+    import pyarrow as pa
+    import pyarrow.parquet as pq_write
+
+    filename = f"part_{part_idx}.parquet"
+    filepath = os.path.join(data_dir, filename)
     if os.path.exists(filepath):
-        print(f"Skipping {filepath} (already exists)")
+        print(f"Skipping part {part_idx} (already exists at {filepath})")
         return True
 
-    url = f"{BASE_URL}/{filename}"
-    print(f"Downloading {filename}...")
+    print(f"Downloading part {part_idx} from {HF_DATASET}...")
+    try:
+        data_files = [f"part_{part_idx}.jsonl"]
+        dataset = load_dataset(
+            HF_DATASET,
+            data_files=data_files,
+            split="train",
+            num_proc=num_proc,
+        )
 
-    max_attempts = 5
-    for attempt in range(1, max_attempts + 1):
-        try:
-            response = requests.get(url, stream=True, timeout=30)
-            response.raise_for_status()
-            temp_path = filepath + ".tmp"
-            with open(temp_path, "wb") as f:
-                for chunk in response.iter_content(chunk_size=1024 * 1024):
-                    if chunk:
-                        f.write(chunk)
-            os.rename(temp_path, filepath)
-            print(f"Successfully downloaded {filename}")
-            return True
-        except (requests.RequestException, IOError) as e:
-            print(f"Attempt {attempt}/{max_attempts} failed for {filename}: {e}")
-            for path in [filepath + ".tmp", filepath]:
-                if os.path.exists(path):
-                    try:
-                        os.remove(path)
-                    except OSError:
-                        pass
-            if attempt < max_attempts:
-                wait_time = 2 ** attempt
-                print(f"Waiting {wait_time} seconds before retry...")
-                time.sleep(wait_time)
-            else:
-                print(f"Failed to download {filename} after {max_attempts} attempts")
-                return False
+        # Save as parquet with 'text' column
+        # Keep only the 'text' column for the dataloader
+        if "text" not in dataset.column_names:
+            print(f"  ERROR: 'text' column not found in part {part_idx}. Columns: {dataset.column_names}")
+            return False
 
-    return False
+        dataset = dataset.select_columns(["text"])
+
+        temp_path = filepath + ".tmp"
+        dataset.to_parquet(temp_path)
+        os.rename(temp_path, filepath)
+        print(f"  Saved part {part_idx} -> {filepath} ({len(dataset):,} rows)")
+        return True
+    except Exception as e:
+        print(f"  ERROR downloading part {part_idx}: {e}")
+        for path in [filepath + ".tmp", filepath]:
+            if os.path.exists(path):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+        return False
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Download Nemotron-ClimbMix dataset shards")
+    parser = argparse.ArgumentParser(description="Download ClimbMix dataset and convert to parquet")
     parser.add_argument(
-        "-n", "--num-files", type=int, default=-1,
-        help="Number of train shards to download (default: -1 = all)",
+        "-n", "--num-parts", type=int, default=-1,
+        help="Number of parts to download (0-99). -1 = all 100 parts (default: -1)",
     )
     parser.add_argument(
-        "-w", "--num-workers", type=int, default=4,
-        help="Number of parallel download workers (default: 4)",
+        "-w", "--num-workers", type=int, default=8,
+        help="Number of workers for dataset processing (default: 8)",
+    )
+    parser.add_argument(
+        "--val-part", type=int, default=99,
+        help="Which part to use as validation (default: 99, the last part)",
     )
     args = parser.parse_args()
 
     os.makedirs(DATA_DIR, exist_ok=True)
 
-    num_train_shards = MAX_SHARD if args.num_files == -1 else min(args.num_files, MAX_SHARD)
-    ids_to_download = list(range(num_train_shards))
-    ids_to_download.append(MAX_SHARD)  # always download the validation shard
+    num_parts = TOTAL_PARTS if args.num_parts == -1 else min(args.num_parts, TOTAL_PARTS)
 
-    print(f"Downloading {len(ids_to_download)} shards using {args.num_workers} workers...")
-    print(f"Dataset: {HF_DATASET}")
+    # Build list of parts to download
+    parts_to_download = list(range(num_parts))
+    if args.val_part not in parts_to_download:
+        parts_to_download.append(args.val_part)  # always include validation part
+
+    print(f"Downloading {len(parts_to_download)} parts from {HF_DATASET}")
     print(f"Target directory: {DATA_DIR}")
+    print(f"Validation part: {args.val_part}")
     print()
-    with Pool(processes=args.num_workers) as pool:
-        results = pool.map(download_single_file, ids_to_download)
 
-    successful = sum(1 for success in results if success)
-    print(f"Done! Downloaded: {successful}/{len(ids_to_download)} shards to {DATA_DIR}")
+    successful = 0
+    for part_idx in parts_to_download:
+        if download_part(part_idx, DATA_DIR, num_proc=args.num_workers):
+            successful += 1
+
+    print(f"\nDone! Downloaded: {successful}/{len(parts_to_download)} parts to {DATA_DIR}")

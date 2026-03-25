@@ -117,21 +117,25 @@ The project uses the [NVIDIA Nemotron-ClimbMix](https://huggingface.co/datasets/
 
 > **Important:** Home directory has limited quota. Set `HF_HOME` to `/scratch` for the HuggingFace cache.
 
-#### Step 1: Download parquet shards (CPU-only)
+#### Step 1: Download dataset (CPU-only)
+
+Downloads from [OptimalScale/ClimbMix](https://huggingface.co/datasets/OptimalScale/ClimbMix) (community raw-text version) and converts JSONL to parquet.
 
 ```bash
 export HF_HOME=/scratch/$USER/hf_cache
 
-# Download all shards
+# Download all 100 parts
 python -m etude.dataset -n -1
 
-# Or ~170 shards for a quick start
-python -m etude.dataset -n 170
+# Or fewer parts for a quick start
+python -m etude.dataset -n 10
 ```
 
 #### Step 2: Train tokenizer (CPU-only)
 
-Trains a custom 32K vocab BPE tokenizer (GPT-4 style) on the downloaded parquets.
+Trains a custom 32K vocab BPE tokenizer (GPT-4 style) on the downloaded parquets. This creates `tokenizer.pkl` at `~/.cache/etude/tokenizer/`.
+
+> **Important:** You must complete this step before training. Without it you'll get `FileNotFoundError: tokenizer.pkl`.
 
 ```bash
 python -m scripts.tok_train
