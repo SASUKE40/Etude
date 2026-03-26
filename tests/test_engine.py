@@ -40,7 +40,7 @@ class MockModel:
     def forward(self, ids, kv_cache=None):
         """Return uniform logits so sampling is spread across vocab."""
         B, T = ids.shape
-        # With FA3, flash_attn_with_kvcache updates cache in-place and we advance position
+        # flash_attn_with_kvcache updates cache in-place and we advance position
         if kv_cache is not None:
             kv_cache.advance(T)
         # Uniform logits -> equal probability for all tokens
@@ -83,7 +83,7 @@ class ByteTokenizer:
         return bytes(byte_tokens).decode("utf-8", errors="replace")
 
 def test_kv_cache_basic():
-    """Test basic KVCache functionality for FA3."""
+    """Test basic KVCache functionality."""
     batch_size = 2
     num_heads = 3
     seq_len = 64

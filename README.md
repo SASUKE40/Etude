@@ -165,7 +165,7 @@ torchrun --standalone --nproc_per_node=8 -m scripts.base_eval
 etude/              Core library
   gpt.py              Model architecture
   deltanet.py          Gated DeltaNet layer
-  flash_attention.py   FA3/SDPA unified interface
+  flash_attention.py   FA4/SDPA unified interface
   optim.py             Muon + AdamW optimizer
   engine.py            Inference engine with KV cache
   tokenizer.py         BPE tokenizer
@@ -201,7 +201,7 @@ tests/              Unit tests
 - **Two-stage training**: General language pretraining → domain specialization
 - **Multi-dataset support**: FineWeb-Edu, The Stack (Rust), ClimbMix, with HuggingFace streaming fallback
 - **Hybrid architecture**: Gated DeltaNet (linear attention) + Gated Attention for efficiency
-- **Flash Attention 3**: Automatic FA3 on Hopper GPUs, SDPA fallback elsewhere
+- **Flash Attention 4**: Automatic FA4 on Ampere+ GPUs (Hopper, Blackwell), SDPA fallback elsewhere
 - **FP8 training**: Optional FP8 for faster training on H100+
 - **Muon optimizer**: Combined Muon (for matrices) + AdamW (for embeddings) with distributed support
 - **Multi-token prediction**: Auxiliary MTP loss for improved training

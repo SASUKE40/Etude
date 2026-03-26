@@ -21,7 +21,7 @@ from etude.tokenizer import get_token_bytes
 from etude.checkpoint_manager import save_checkpoint, load_model, load_optimizer_state
 from etude.loss_eval import evaluate_bpb
 import torch.distributed as dist
-from etude.flash_attention import HAS_FA3
+from etude.flash_attention import HAS_FA4
 from etude.engine import Engine
 from scripts.chat_eval import run_chat_eval
 
@@ -88,8 +88,8 @@ use_dummy_wandb = args.run == "dummy" or not master_process
 wandb_run = DummyWandb() if use_dummy_wandb else wandb.init(project="etude-sft", name=args.run, config=user_config)
 
 # Flash Attention status
-if not HAS_FA3:
-    print0("WARNING: Flash Attention 3 not available, using PyTorch SDPA fallback. Training will be less efficient.")
+if not HAS_FA4:
+    print0("WARNING: Flash Attention 4 not available, using PyTorch SDPA fallback. Training will be less efficient.")
 
 # Load the model and tokenizer
 model, tokenizer, meta = load_model("base", device, phase="train", model_tag=args.model_tag, step=args.model_step)
