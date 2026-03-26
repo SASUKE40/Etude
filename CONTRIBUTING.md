@@ -172,6 +172,19 @@ python -m scripts.tok_viz --sample rust -o /scratch/$USER/etude/tokenizer/tokeni
 scp zhu.shili@login.explorer.northeastern.edu:/scratch/zhu.shili/etude/tokenizer/tokenizer_viz.html .
 ```
 
+Or serve it directly from the cluster via SSH tunnel:
+
+```bash
+# On the cluster: start a simple HTTP server
+cd /scratch/$USER/etude/tokenizer
+python -m http.server 8080
+
+# On your local machine: open an SSH tunnel
+ssh -L 8080:localhost:8080 zhu.shili@login.explorer.northeastern.edu
+```
+
+Then open http://localhost:8080/tokenizer_viz.html in your browser.
+
 #### Step 3: Train model (needs GPU)
 
 The dataloader reads parquets and tokenizes on-the-fly with the custom tokenizer.
