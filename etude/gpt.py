@@ -452,7 +452,9 @@ class GPT(nn.Module):
             )
 
             # Multi-token prediction losses
-            if self.config.mtp_steps > 0 and len(self.mtp_heads) > 0:
+            # MTP produces different-length outputs due to shifts, so only use
+            # mean reduction (skip MTP when loss_reduction='none' for BPB eval)
+            if self.config.mtp_steps > 0 and len(self.mtp_heads) > 0 and loss_reduction == 'mean':
                 mtp_weight = 0.1  # weight for MTP auxiliary losses
                 for step_i, mtp_head in enumerate(self.mtp_heads):
                     # For step i+1, predict token at position t+i+2 given hidden state at t
