@@ -139,7 +139,28 @@ Trains a custom 32K vocab BPE tokenizer (GPT-4 style) on the downloaded parquets
 
 ```bash
 python -m scripts.tok_train
+
+# For two-stage training, train on combined data:
+python -m scripts.tok_train --datasets fineweb-edu,rust
 ```
+
+After training, visualize the tokenizer to inspect how it splits text:
+
+```bash
+# Show built-in samples (Rust, English, mixed) — opens in browser
+python -m scripts.tok_viz
+
+# Tokenize a Rust file
+python -m scripts.tok_viz --file src/main.rs
+
+# Tokenize a string
+python -m scripts.tok_viz "fn main() { println!(\"Hello\"); }"
+
+# Save HTML (useful on cluster without a browser)
+python -m scripts.tok_viz --sample rust -o tokenizer_viz.html
+```
+
+The HTML output shows each token as a colored span with hover tooltips displaying the token ID, byte representation, and compression stats.
 
 #### Step 3: Train model (needs GPU)
 
