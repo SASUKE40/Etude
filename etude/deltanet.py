@@ -90,7 +90,7 @@ class GatedDeltaNet(nn.Module):
     def _apply_conv(self, x, conv):
         """Apply causal 1D convolution. x: (B, T, D) -> (B, T, D)"""
         # Conv1d expects (B, D, T)
-        x = x.transpose(1, 2)
+        x = x.transpose(1, 2).to(conv.weight.dtype)
         x = conv(x)[:, :, :x.size(2)]  # causal: trim to original length
         return x.transpose(1, 2)
 
