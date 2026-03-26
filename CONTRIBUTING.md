@@ -318,7 +318,35 @@ scontrol release <job_id>
 scontrol update jobid=<JOBID> TimeLimit=<NEW_TIME>
 ```
 
-### Training with Checkpoints
+### Training with SLURM Batch Jobs
+
+Submit training as a batch job using the provided SLURM script:
+
+```bash
+sbatch runs/train.slurm
+```
+
+This submits to the `sharing` partition with 1×H100, 80GB, 1h time limit. Checkpoints are saved every 100 steps.
+
+To resume after the time limit, edit `runs/train.slurm` to add `--resume-from-step=<LAST_STEP>` and resubmit:
+
+```bash
+# Check last saved step
+ls $ETUDE_BASE_DIR/base_checkpoints/
+
+# Resubmit
+sbatch runs/train.slurm
+```
+
+Monitor jobs:
+
+```bash
+squeue -u $USER           # job status
+tail -f runs/etude-*.log   # live output
+scancel <job_id>           # cancel a job
+```
+
+### Training with Interactive Sessions
 
 When you only have limited GPU time (e.g. 1 hour per session), use `--save-every` to periodically save checkpoints and `--resume-from-step` to continue across sessions.
 
