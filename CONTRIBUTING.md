@@ -162,6 +162,16 @@ python -m scripts.tok_viz --sample rust -o tokenizer_viz.html
 
 The HTML output shows each token as a colored span with hover tooltips displaying the token ID, byte representation, and compression stats.
 
+To download the visualization from the cluster to your local machine:
+
+```bash
+# On the cluster: generate the HTML
+python -m scripts.tok_viz --sample rust -o /scratch/$USER/etude/tokenizer/tokenizer_viz.html
+
+# On your local machine: download it
+scp zhu.shili@login.explorer.northeastern.edu:/scratch/zhu.shili/etude/tokenizer/tokenizer_viz.html .
+```
+
 #### Step 3: Train model (needs GPU)
 
 The dataloader reads parquets and tokenizes on-the-fly with the custom tokenizer.
