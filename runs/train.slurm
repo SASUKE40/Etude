@@ -8,6 +8,7 @@
 #SBATCH --time=1:00:00
 #SBATCH --output=runs/etude-%j.log
 
+module load cuda/12.8
 export OMP_NUM_THREADS=1
 export ETUDE_BASE_DIR="/scratch/$USER/etude"
 export HF_HOME="/scratch/$USER/hf_cache"
