@@ -65,6 +65,7 @@ parser.add_argument("--warmup-steps", type=int, default=40, help="number of step
 parser.add_argument("--warmdown-ratio", type=float, default=0.65, help="ratio of iterations for LR warmdown")
 parser.add_argument("--final-lr-frac", type=float, default=0.05, help="final LR as fraction of initial LR")
 parser.add_argument("--resume-from-step", type=int, default=-1, help="resume training from this step (-1 = disable)")
+parser.add_argument("--resume-from-dir", type=str, default=None, help="load checkpoint from a different directory (for stage transitions)")
 # Evaluation
 parser.add_argument("--eval-every", type=int, default=250, help="evaluate val bpb every N steps (-1 = disable)")
 parser.add_argument("--eval-tokens", type=int, default=80*524288, help="number of tokens to evaluate val loss on")
@@ -72,6 +73,8 @@ parser.add_argument("--core-metric-every", type=int, default=2000, help="evaluat
 parser.add_argument("--core-metric-max-per-task", type=int, default=500, help="examples per task for CORE metric")
 parser.add_argument("--sample-every", type=int, default=2000, help="sample from model every N steps (-1 = disable)")
 parser.add_argument("--save-every", type=int, default=-1, help="save checkpoints every N steps (-1 = only at end)")
+# Dataset
+parser.add_argument("--dataset", type=str, default="climbmix", help="dataset to train on: climbmix, fineweb-edu, rust (default: climbmix)")
 # Output
 parser.add_argument("--model-tag", type=str, default=None, help="override model tag for checkpoint directory name")
 args = parser.parse_args()
@@ -146,9 +149,14 @@ base_dir = get_base_dir()
 output_dirname = args.model_tag if args.model_tag else f"d{args.depth}" # e.g. d12
 checkpoint_dir = os.path.join(base_dir, "base_checkpoints", output_dirname)
 resuming = args.resume_from_step != -1
+resume_checkpoint_dir = args.resume_from_dir if args.resume_from_dir else checkpoint_dir
+# When resuming from a different directory (stage transition), only load model weights, not optimizer
+stage_transition = args.resume_from_dir is not None and args.resume_from_dir != checkpoint_dir
 if resuming:
-    print0(f"Resuming optimization from step {args.resume_from_step}")
-    model_data, optimizer_data, meta_data = load_checkpoint(checkpoint_dir, args.resume_from_step, device, load_optimizer=True, rank=ddp_rank)
+    print0(f"Resuming from step {args.resume_from_step} (dir: {resume_checkpoint_dir})")
+    if stage_transition:
+        print0("Stage transition: loading model weights only (resetting optimizer and dataloader)")
+    model_data, optimizer_data, meta_data = load_checkpoint(resume_checkpoint_dir, args.resume_from_step, device, load_optimizer=not stage_transition, rank=ddp_rank)
     model.load_state_dict(model_data, strict=True, assign=True)
     del model_data # free up this memory after the copy
 
@@ -303,7 +311,7 @@ optimizer = model.setup_optimizer(
     weight_decay=weight_decay_scaled,
 )
 
-if resuming:
+if resuming and not stage_transition:
     optimizer.load_state_dict(optimizer_data)
     del optimizer_data
 
@@ -315,9 +323,11 @@ if scaler is not None:
 
 # -----------------------------------------------------------------------------
 # Initialize the DataLoaders for train/val
-dataloader_resume_state_dict = None if not resuming else meta_data["dataloader_state_dict"]
-train_loader = tokenizing_distributed_data_loader_with_state_bos_bestfit(tokenizer, args.device_batch_size, args.max_seq_len, split="train", device=device, resume_state_dict=dataloader_resume_state_dict)
-build_val_loader = lambda: tokenizing_distributed_data_loader_bos_bestfit(tokenizer, args.device_batch_size, args.max_seq_len, split="val", device=device)
+# For stage transitions, don't resume the dataloader (new dataset)
+dataloader_resume_state_dict = None if (not resuming or stage_transition) else meta_data["dataloader_state_dict"]
+print0(f"Dataset: {args.dataset}")
+train_loader = tokenizing_distributed_data_loader_with_state_bos_bestfit(tokenizer, args.device_batch_size, args.max_seq_len, split="train", device=device, resume_state_dict=dataloader_resume_state_dict, dataset=args.dataset)
+build_val_loader = lambda: tokenizing_distributed_data_loader_bos_bestfit(tokenizer, args.device_batch_size, args.max_seq_len, split="val", device=device, dataset=args.dataset)
 x, y, dataloader_state_dict = next(train_loader) # kick off load of the very first batch of data
 
 # -----------------------------------------------------------------------------
@@ -377,7 +387,7 @@ def get_weight_decay(it):
 # Training loop
 
 # Loop state (variables updated by the training loop)
-if not resuming:
+if not resuming or stage_transition:
     step = 0
     val_bpb = None # will be set if eval_every > 0
     min_val_bpb = float("inf")

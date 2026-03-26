@@ -20,17 +20,17 @@ import torch
 import pyarrow.parquet as pq
 
 from etude.common import get_dist_info
-from etude.dataset import list_parquet_files, HF_DATASET, DATA_DIR
+from etude.dataset import list_parquet_files, HF_DATASETS, TEXT_COLUMNS
 
-def _has_local_parquets():
+def _has_local_parquets(dataset="climbmix"):
     """Check if local parquet files exist for training."""
     try:
-        paths = list_parquet_files()
+        paths = list_parquet_files(dataset=dataset)
         return len(paths) > 0
     except (FileNotFoundError, OSError):
         return False
 
-def _document_batches_parquet(split, resume_state_dict, tokenizer_batch_size):
+def _document_batches_parquet(split, resume_state_dict, tokenizer_batch_size, dataset="climbmix"):
     """
     Infinite iterator over document batches from local parquet files.
 
@@ -39,10 +39,11 @@ def _document_batches_parquet(split, resume_state_dict, tokenizer_batch_size):
     and epoch counts how many times we've cycled through the dataset (starts at 1).
     """
     ddp, ddp_rank, ddp_local_rank, ddp_world_size = get_dist_info()
+    text_col = TEXT_COLUMNS.get(dataset, "text")
 
     warn_on_legacy = ddp_rank == 0 and split == "train"
-    parquet_paths = list_parquet_files(warn_on_legacy=warn_on_legacy)
-    assert len(parquet_paths) != 0, "No dataset parquet files found, did you run dataset.py?"
+    parquet_paths = list_parquet_files(dataset=dataset, warn_on_legacy=warn_on_legacy)
+    assert len(parquet_paths) != 0, f"No parquet files found for dataset '{dataset}'"
     parquet_paths = parquet_paths[:-1] if split == "train" else parquet_paths[-1:]
 
     resume_pq_idx = resume_state_dict["pq_idx"] if resume_state_dict is not None else 0
@@ -69,7 +70,7 @@ def _document_batches_parquet(split, resume_state_dict, tokenizer_batch_size):
                 rg_idx = ddp_rank
             while rg_idx < pf.num_row_groups:
                 rg = pf.read_row_group(rg_idx)
-                batch = rg.column('text').to_pylist()
+                batch = rg.column(text_col).to_pylist()
                 for i in range(0, len(batch), tokenizer_batch_size):
                     yield batch[i:i+tokenizer_batch_size], (pq_idx, rg_idx, epoch)
                 rg_idx += ddp_world_size
@@ -78,7 +79,7 @@ def _document_batches_parquet(split, resume_state_dict, tokenizer_batch_size):
         epoch += 1
 
 
-def _document_batches_hf(split, resume_state_dict, tokenizer_batch_size):
+def _document_batches_hf(split, resume_state_dict, tokenizer_batch_size, dataset="climbmix"):
     """
     Infinite iterator over document batches streamed from HuggingFace.
 
@@ -88,72 +89,68 @@ def _document_batches_hf(split, resume_state_dict, tokenizer_batch_size):
     from datasets import load_dataset
 
     ddp, ddp_rank, ddp_local_rank, ddp_world_size = get_dist_info()
-
-    # Use last part (part_99) as validation, rest as train
-    if split == "val":
-        data_files = ["part_99.jsonl"]
-    else:
-        data_files = [f"part_{i}.jsonl" for i in range(99)]
+    text_col = TEXT_COLUMNS.get(dataset, "text")
+    hf_id = HF_DATASETS.get(dataset)
 
     resume_batch_idx = resume_state_dict.get("batch_idx", 0) if resume_state_dict else 0
     resume_epoch = resume_state_dict.get("epoch", 1) if resume_state_dict else 1
     epoch = resume_epoch
 
     while True:
-        dataset = load_dataset(
-            HF_DATASET,
-            data_files=data_files,
-            split="train",
-            streaming=True,
-        )
+        if dataset == "climbmix":
+            data_files = ["part_99.jsonl"] if split == "val" else [f"part_{i}.jsonl" for i in range(99)]
+            ds = load_dataset(hf_id, data_files=data_files, split="train", streaming=True)
+        elif dataset == "fineweb-edu":
+            ds = load_dataset(hf_id, name="sample-10BT", split="train", streaming=True)
+        elif dataset == "rust":
+            ds = load_dataset(hf_id, data_dir="data/rust", split="train", streaming=True)
+        else:
+            raise ValueError(f"Unknown dataset for HF streaming: {dataset}")
 
         batch = []
         batch_idx = 0
         row_idx = 0
 
-        for example in dataset:
-            # DDP sharding: each rank takes every Nth row
+        for example in ds:
             if row_idx % ddp_world_size != ddp_rank:
                 row_idx += 1
                 continue
             row_idx += 1
 
-            text = example.get("text")
+            text = example.get(text_col)
             if text is None:
                 continue
             batch.append(text)
 
             if len(batch) >= tokenizer_batch_size:
-                # Skip batches for approximate resume
                 if batch_idx < resume_batch_idx:
                     batch = []
                     batch_idx += 1
                     continue
-                resume_batch_idx = 0  # only skip on first epoch
+                resume_batch_idx = 0
                 yield batch, (0, batch_idx, epoch)
                 batch = []
                 batch_idx += 1
 
-        # Yield remaining
         if batch:
             yield batch, (0, batch_idx, epoch)
 
         epoch += 1
 
 
-def _document_batches(split, resume_state_dict, tokenizer_batch_size):
+def _document_batches(split, resume_state_dict, tokenizer_batch_size, dataset="climbmix"):
     """Auto-select local parquet or HuggingFace streaming based on data availability."""
-    if _has_local_parquets():
-        yield from _document_batches_parquet(split, resume_state_dict, tokenizer_batch_size)
+    if _has_local_parquets(dataset=dataset):
+        yield from _document_batches_parquet(split, resume_state_dict, tokenizer_batch_size, dataset=dataset)
     else:
-        yield from _document_batches_hf(split, resume_state_dict, tokenizer_batch_size)
+        yield from _document_batches_hf(split, resume_state_dict, tokenizer_batch_size, dataset=dataset)
 
 
 def tokenizing_distributed_data_loader_with_state_bos_bestfit(
     tokenizer, B, T, split,
     tokenizer_threads=4, tokenizer_batch_size=128,
     device="cuda", resume_state_dict=None,
-    buffer_size=1000
+    buffer_size=1000, dataset="climbmix",
 ):
     """
     BOS-aligned dataloader with Best-Fit Cropping.
@@ -174,7 +171,7 @@ def tokenizing_distributed_data_loader_with_state_bos_bestfit(
     assert split in ["train", "val"], "split must be 'train' or 'val'"
 
     row_capacity = T + 1
-    batches = _document_batches(split, resume_state_dict, tokenizer_batch_size)
+    batches = _document_batches(split, resume_state_dict, tokenizer_batch_size, dataset=dataset)
     bos_token = tokenizer.get_bos_token_id()
     doc_buffer = []
     pq_idx, rg_idx, epoch = 0, 0, 1

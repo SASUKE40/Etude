@@ -1,6 +1,9 @@
 """
 Train a tokenizer using our own BPE Tokenizer library.
 In the style of GPT-4 tokenizer.
+
+By default, trains on the first available dataset. Use --datasets to combine
+multiple datasets for tokenizer training (e.g. --datasets fineweb-edu,rust).
 """
 import os
 import time
@@ -14,33 +17,53 @@ from etude.dataset import parquets_iter_batched
 # Parse command line arguments
 
 parser = argparse.ArgumentParser(description='Train a BPE tokenizer')
-parser.add_argument('--max-chars', type=int, default=2_000_000_000, help='Maximum characters to train on (default: 10B)')
+parser.add_argument('--max-chars', type=int, default=2_000_000_000, help='Maximum characters to train on (default: 2B)')
 parser.add_argument('--doc-cap', type=int, default=10_000, help='Maximum characters per document (default: 10,000)')
 parser.add_argument('--vocab-size', type=int, default=32768, help='Vocabulary size (default: 32768 = 2^15)')
+parser.add_argument('--datasets', type=str, default=None, help='Comma-separated list of datasets to train on (e.g. fineweb-edu,rust). Default: auto-detect.')
 args = parser.parse_args()
 print(f"max_chars: {args.max_chars:,}")
 print(f"doc_cap: {args.doc_cap:,}")
 print(f"vocab_size: {args.vocab_size:,}")
+
+# Determine which datasets to use
+if args.datasets:
+    dataset_names = [d.strip() for d in args.datasets.split(",")]
+else:
+    dataset_names = ["climbmix"]  # default
+print(f"datasets: {dataset_names}")
 
 # -----------------------------------------------------------------------------
 # Text iterator
 
 def text_iterator():
     """
+    Iterate over documents from one or more datasets.
     1) Flatten the batches into a single iterator
     2) Crop every document to args.doc_cap characters
     3) Break when we've seen args.max_chars characters
     """
     nchars = 0
-    for batch in parquets_iter_batched(split="train"):
-        for doc in batch:
-            doc_text = doc
-            if len(doc_text) > args.doc_cap:
-                doc_text = doc_text[:args.doc_cap]
-            nchars += len(doc_text)
-            yield doc_text
-            if nchars > args.max_chars:
-                return
+    # Split budget evenly across datasets
+    chars_per_dataset = args.max_chars // len(dataset_names)
+
+    for ds_name in dataset_names:
+        ds_chars = 0
+        print(f"  Reading from dataset: {ds_name} (up to {chars_per_dataset:,} chars)")
+        for batch in parquets_iter_batched(split="train", dataset=ds_name):
+            for doc in batch:
+                doc_text = doc
+                if len(doc_text) > args.doc_cap:
+                    doc_text = doc_text[:args.doc_cap]
+                nchars += len(doc_text)
+                ds_chars += len(doc_text)
+                yield doc_text
+                if ds_chars > chars_per_dataset:
+                    break
+            if ds_chars > chars_per_dataset:
+                break
+        print(f"  {ds_name}: {ds_chars:,} chars collected")
+    print(f"Total: {nchars:,} chars from {len(dataset_names)} dataset(s)")
 text_iter = text_iterator()
 
 # -----------------------------------------------------------------------------

@@ -1,14 +1,19 @@
 """
-The base/pretraining dataset: NVIDIA Nemotron-ClimbMix.
+Dataset management for Etude training.
 
-Supports two data formats:
+Supports multiple datasets:
+- ClimbMix: NVIDIA Nemotron-ClimbMix (400B tokens, general text)
+- FineWeb-Edu: High-quality educational web text (10BT sample)
+- Rust: Rust code from The Stack Dedup
+
+Data formats:
 1. Binary (.bin) files — pre-tokenized with GPT-2 tokenizer, loaded via numpy memmap.
-   Prepare with: python data/climbmix/prepare.py && python data/climbmix/merge.py
 2. Parquet files — raw text, tokenized on-the-fly by the dataloader.
-   Download with: python -m etude.dataset -n 10
 
-Dataset: https://huggingface.co/datasets/nvidia/Nemotron-ClimbMix
-Community raw text version: https://huggingface.co/datasets/OptimalScale/ClimbMix
+Datasets:
+- ClimbMix: https://huggingface.co/datasets/OptimalScale/ClimbMix
+- FineWeb-Edu: https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu
+- Rust: https://huggingface.co/datasets/bigcode/the-stack-dedup
 """
 
 import os
@@ -25,8 +30,10 @@ HF_DATASET = "OptimalScale/ClimbMix"
 base_dir = get_base_dir()
 DATA_DIR = os.path.join(base_dir, "base_data_climbmix")
 
-# Binary data directories
+# Project root for local data directories
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Binary data directories
 BIN_DATA_DIR = os.path.join(_PROJECT_ROOT, "data", "climbmix")
 BIN_DATA_DIR_RUST = os.path.join(_PROJECT_ROOT, "data", "rust")
 
@@ -35,7 +42,28 @@ BIN_DATA_DIRS = {
     "rust": BIN_DATA_DIR_RUST,
 }
 
-# Total number of JSONL files in the dataset (part_0.jsonl to part_99.jsonl)
+# Parquet data directories — checked in order, first existing dir with parquets wins
+PARQUET_DATA_DIRS = {
+    "climbmix": [DATA_DIR, os.path.join(_PROJECT_ROOT, "data", "climbmix")],
+    "fineweb-edu": [os.path.join(base_dir, "fineweb-edu"), os.path.join(_PROJECT_ROOT, "data", "fineweb-edu")],
+    "rust": [os.path.join(base_dir, "rust"), os.path.join(_PROJECT_ROOT, "data", "rust")],
+}
+
+# HuggingFace dataset IDs for streaming fallback
+HF_DATASETS = {
+    "climbmix": "OptimalScale/ClimbMix",
+    "fineweb-edu": "HuggingFaceFW/fineweb-edu",
+    "rust": "bigcode/the-stack-dedup",
+}
+
+# Text column name varies by dataset
+TEXT_COLUMNS = {
+    "climbmix": "text",
+    "fineweb-edu": "text",
+    "rust": "content",
+}
+
+# Total number of JSONL files in the ClimbMix dataset (part_0.jsonl to part_99.jsonl)
 TOTAL_PARTS = 100
 
 # -----------------------------------------------------------------------------
@@ -96,61 +124,75 @@ def get_bin_batch(split, batch_size, block_size, device="cuda"):
 # -----------------------------------------------------------------------------
 # Parquet data support (streaming from HuggingFace)
 
-def list_parquet_files(data_dir=None, warn_on_legacy=False):
-    """Looks into a data dir and returns full paths to all parquet files."""
-    data_dir = DATA_DIR if data_dir is None else data_dir
+def list_parquet_files(data_dir=None, dataset="climbmix", warn_on_legacy=False):
+    """Looks into data dirs and returns full paths to all parquet files.
 
-    if not os.path.exists(data_dir):
-        if warn_on_legacy:
-            print()
-            print("=" * 80)
-            print("  WARNING: DATASET NOT FOUND")
-            print("=" * 80)
-            print()
-            print(f"  Could not find: {data_dir}")
-            print()
+    Searches multiple candidate directories for the given dataset.
+    """
+    if data_dir is not None:
+        candidate_dirs = [data_dir]
+    else:
+        candidate_dirs = PARQUET_DATA_DIRS.get(dataset, [DATA_DIR])
+        if isinstance(candidate_dirs, str):
+            candidate_dirs = [candidate_dirs]
+        if dataset == "climbmix":
+            candidate_dirs.append(os.path.join(base_dir, "base_data"))  # legacy fallback
+
+    for d in candidate_dirs:
+        if not os.path.exists(d):
+            continue
+        parquet_files = sorted([
+            f for f in os.listdir(d)
+            if f.endswith(".parquet") and not f.endswith(".tmp")
+        ])
+        if parquet_files:
+            return [os.path.join(d, f) for f in parquet_files]
+
+    if warn_on_legacy:
+        print()
+        print("=" * 80)
+        print(f"  WARNING: DATASET NOT FOUND ({dataset})")
+        print("=" * 80)
+        print()
+        print(f"  Searched: {candidate_dirs}")
+        print()
+        if dataset == "climbmix":
             print("  To download the ClimbMix dataset, run:")
-            print()
-            print("    python -m etude.dataset -n 10     # download 10 parts")
-            print()
-            print("  Or prepare binary data for nanoGPT-style training:")
-            print()
-            print("    python data/climbmix/prepare.py --all")
-            print("    python data/climbmix/merge.py")
-            print()
-            print("=" * 80)
-            print()
-        # attempt a fallback to the legacy data directory
-        data_dir = os.path.join(base_dir, "base_data")
+            print("    python -m etude.dataset -n 10")
+        elif dataset == "fineweb-edu":
+            print("  To download FineWeb-Edu, run:")
+            print("    python data/fineweb-edu/prepare.py")
+        elif dataset == "rust":
+            print("  To download Rust data, run:")
+            print("    python data/rust/prepare.py")
+        print()
+        print("=" * 80)
+        print()
 
-    parquet_files = sorted([
-        f for f in os.listdir(data_dir)
-        if f.endswith(".parquet") and not f.endswith(".tmp")
-    ])
-    parquet_paths = [os.path.join(data_dir, f) for f in parquet_files]
-    return parquet_paths
+    return []
 
 
-def parquets_iter_batched(split, start=0, step=1, batch_size=10000):
+def parquets_iter_batched(split, start=0, step=1, batch_size=10000, dataset="climbmix"):
     """
     Iterate through the dataset, in batches of text strings.
 
     Auto-selects local parquet files if available, otherwise streams from HuggingFace.
-    - split can be "train" or "val". the last parquet file / part_99 will be val.
+    - split can be "train" or "val". the last parquet file will be val.
     - start/step are useful for skipping rows in DDP. e.g. start=rank, step=world_size
+    - dataset: which dataset to iterate ("climbmix", "fineweb-edu", "rust")
     """
     assert split in ["train", "val"], "split must be 'train' or 'val'"
+    text_col = TEXT_COLUMNS.get(dataset, "text")
 
     try:
-        parquet_paths = list_parquet_files()
+        parquet_paths = list_parquet_files(dataset=dataset)
         if parquet_paths:
-            # Local parquet path
             parquet_paths = parquet_paths[:-1] if split == "train" else parquet_paths[-1:]
             for filepath in parquet_paths:
                 pf = pq.ParquetFile(filepath)
                 for rg_idx in range(start, pf.num_row_groups, step):
                     rg = pf.read_row_group(rg_idx)
-                    texts = rg.column("text").to_pylist()
+                    texts = rg.column(text_col).to_pylist()
                     yield texts
             return
     except (FileNotFoundError, OSError):
@@ -159,26 +201,26 @@ def parquets_iter_batched(split, start=0, step=1, batch_size=10000):
     # HuggingFace streaming fallback
     from datasets import load_dataset
 
-    if split == "val":
-        data_files = ["part_99.jsonl"]
-    else:
-        data_files = [f"part_{i}.jsonl" for i in range(99)]
+    hf_id = HF_DATASETS.get(dataset, HF_DATASET)
 
-    dataset = load_dataset(
-        HF_DATASET,
-        data_files=data_files,
-        split="train",
-        streaming=True,
-    )
+    if dataset == "climbmix":
+        data_files = ["part_99.jsonl"] if split == "val" else [f"part_{i}.jsonl" for i in range(99)]
+        ds = load_dataset(hf_id, data_files=data_files, split="train", streaming=True)
+    elif dataset == "fineweb-edu":
+        ds = load_dataset(hf_id, name="sample-10BT", split="train", streaming=True)
+    elif dataset == "rust":
+        ds = load_dataset(hf_id, data_dir="data/rust", split="train", streaming=True)
+    else:
+        raise ValueError(f"Unknown dataset: {dataset}")
 
     batch = []
     row_idx = 0
-    for example in dataset:
+    for example in ds:
         if row_idx % step != start:
             row_idx += 1
             continue
         row_idx += 1
-        text = example.get("text")
+        text = example.get(text_col)
         if text is None:
             continue
         batch.append(text)

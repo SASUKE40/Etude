@@ -172,6 +172,20 @@ python data/climbmix/merge.py --data-dir /scratch/$USER/etude_data/climbmix
 | `data/climbmix/merge.py` | Merge part files into `train.bin` / `val.bin` |
 | `data/climbmix/prepare.sh` | End-to-end ClimbMix binary prep script |
 
+#### FineWeb-Edu (educational web text)
+
+[FineWeb-Edu](https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu) is a high-quality educational subset of FineWeb. The 10BT sample is used by default.
+
+```bash
+export HF_HOME=/scratch/$USER/hf_cache
+
+# Download 10BT sample (recommended)
+python data/fineweb-edu/prepare.py --output-dir /scratch/$USER/etude/fineweb-edu
+
+# Or use the shell script
+bash data/fineweb-edu/prepare.sh
+```
+
 #### Rust fine-tuning data
 
 After ClimbMix pretraining, fine-tune on Rust code from [The Stack Dedup](https://huggingface.co/datasets/bigcode/the-stack-dedup).
@@ -294,6 +308,30 @@ ls ~/base_checkpoints/d12/   # smaller model
 ```
 
 > **Tip:** Tune `--save-every` based on step speed. Save often enough that you don't lose more than ~5 min of work if the job gets killed.
+
+### Two-Stage Training (FineWeb-Edu + Rust)
+
+Train a model that understands general language then specializes in Rust code generation:
+
+```bash
+# Full pipeline (prepare data, train tokenizer, stage 1 + stage 2)
+bash runs/twostage.sh
+
+# Or run stages manually:
+
+# 1. Train tokenizer on combined data
+python -m scripts.tok_train --datasets fineweb-edu,rust
+
+# 2. Stage 1: Pretrain on FineWeb-Edu
+torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
+    --dataset=fineweb-edu --model-tag="twostage-s1" --save-every=500
+
+# 3. Stage 2: Fine-tune on Rust (loads stage 1 weights, resets optimizer)
+torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
+    --dataset=rust --model-tag="twostage-s2" --target-param-data-ratio=3 \
+    --resume-from-step=<S1_LAST_STEP> \
+    --resume-from-dir="$ETUDE_BASE_DIR/base_checkpoints/twostage-s1"
+```
 
 ### Chat CLI
 
