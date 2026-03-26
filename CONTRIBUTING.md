@@ -279,7 +279,7 @@ Request an interactive shell with a GPU:
 srun --partition=gpu-interactive --nodes=1 --pty --gres=gpu:h200:1 --ntasks=1 --mem=141GB --time=2:00:00 /bin/bash
 
 # H100 (4 GPUs on sharing partition, tighter availability)
-srun --partition=sharing --nodes=1 --pty --gres=gpu:h100:1 --ntasks=1 --mem=80GB --time=2:00:00 /bin/bash
+srun --partition=sharing --nodes=1 --pty --gres=gpu:h100:1 --ntasks=1 --mem=80GB --time=1:00:00 /bin/bash
 ```
 
 | Flag | Meaning |
@@ -291,7 +291,7 @@ srun --partition=sharing --nodes=1 --pty --gres=gpu:h100:1 --ntasks=1 --mem=80GB
 | `--gres=gpu:h200:1` | Request 1x H200 GPU (change model/count as needed) |
 | `--ntasks=1` | One task |
 | `--mem=141GB` | Allocated memory (use 80GB for H100) |
-| `--time=2:00:00` | Wall-time limit of 2 hours |
+| `--time=2:00:00` | Wall-time limit (2h for H200, 1h max for H100) |
 
 #### Available GPU Resources
 
@@ -328,7 +328,7 @@ When you only have limited GPU time (e.g. 1 hour per session), use `--save-every
 
 ```bash
 # Request a GPU node
-srun --partition=sharing --nodes=1 --pty --gres=gpu:h100:1 --ntasks=1 --mem=80GB --time=2:00:00 /bin/bash
+srun --partition=sharing --nodes=1 --pty --gres=gpu:h100:1 --ntasks=1 --mem=80GB --time=1:00:00 /bin/bash
 
 # Start tmux inside the GPU node (survives SSH disconnects)
 TERM=xterm-256color tmux
@@ -346,7 +346,7 @@ torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
 To resume in a new session:
 
 ```bash
-srun --partition=sharing --nodes=1 --pty --gres=gpu:h100:1 --ntasks=1 --mem=80GB --time=2:00:00 /bin/bash
+srun --partition=sharing --nodes=1 --pty --gres=gpu:h100:1 --ntasks=1 --mem=80GB --time=1:00:00 /bin/bash
 TERM=xterm-256color tmux
 cd ~/Etude && source .venv/bin/activate
 export ETUDE_BASE_DIR=/scratch/$USER/etude
@@ -386,7 +386,7 @@ Or run stages manually:
 
 ```bash
 # Request GPU and setup tmux
-srun --partition=sharing --nodes=1 --pty --gres=gpu:h100:1 --ntasks=1 --mem=80GB --time=2:00:00 /bin/bash
+srun --partition=sharing --nodes=1 --pty --gres=gpu:h100:1 --ntasks=1 --mem=80GB --time=1:00:00 /bin/bash
 TERM=xterm-256color tmux
 cd ~/Etude && source .venv/bin/activate
 export ETUDE_BASE_DIR=/scratch/$USER/etude
