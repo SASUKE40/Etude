@@ -117,6 +117,9 @@ def flash_attn_func(q, k, v, causal=False, window_size=(-1, -1)):
         Output tensor of shape (B, T, H, D)
     """
     if USE_FA3:
+        # FA3 only supports fp16/bf16/fp8 — ensure inputs aren't float32
+        if q.dtype == torch.float32:
+            q, k, v = q.bfloat16(), k.bfloat16(), v.bfloat16()
         return _fa3.flash_attn_func(q, k, v, causal=causal, window_size=window_size)
 
     # SDPA fallback: transpose (B, T, H, D) -> (B, H, T, D)

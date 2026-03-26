@@ -68,7 +68,7 @@ def apply_rotary_emb(x, cos, sin, rope_dim):
     x1, x2 = x_rope[..., :d], x_rope[..., d:]
     y1 = x1 * cos + x2 * sin
     y2 = x1 * (-sin) + x2 * cos
-    return torch.cat([y1, y2, x_pass], dim=-1)
+    return torch.cat([y1, y2, x_pass], dim=-1).to(x.dtype)
 
 
 class SwiGLUFFN(nn.Module):
