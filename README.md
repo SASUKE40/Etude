@@ -1,6 +1,6 @@
 # Etude
 
-A compact language model for Rust code generation.
+A compact language model for Rust code generation, trained with a two-stage pipeline: general language pretraining on FineWeb-Edu followed by Rust specialization on The Stack.
 
 ## Architecture
 
@@ -39,41 +39,35 @@ SwiGLU activation with intermediate dimension 3584.
 
 Trained with auxiliary MTP heads for predicting multiple future tokens.
 
-## Project Structure
+## Training Pipeline
+
+Etude uses a two-stage training approach with a combined tokenizer:
+
+### Overview
 
 ```
-etude/              Core library
-  gpt.py              Model architecture
-  deltanet.py          Gated DeltaNet layer
-  flash_attention.py   FA3/SDPA unified interface
-  optim.py             Muon + AdamW optimizer
-  engine.py            Inference engine with KV cache
-  tokenizer.py         BPE tokenizer
-  dataloader.py        Distributed data loading
-  dataset.py           Dataset utilities
-  checkpoint_manager.py  Checkpoint save/load
-  common.py            Shared utilities
-  fp8.py               FP8 training support
-  report.py            Training report generation
-scripts/            Training and evaluation
-  base_train.py        Pretraining
-  base_eval.py         Evaluation (CORE metric, BPB)
-  chat_sft.py          Supervised fine-tuning
-  chat_rl.py           Reinforcement learning
-  chat_cli.py          Interactive CLI chat
-  chat_web.py          Web chat interface
-  tok_train.py         Tokenizer training
-  tok_eval.py          Tokenizer evaluation
-data/               Data preparation
-  climbmix/
-    prepare.py         Download & tokenize Nemotron-ClimbMix
-    merge.py           Merge tokenized parts into train.bin/val.bin
-    prepare.sh         End-to-end data preparation script
-tasks/              Evaluation tasks
-  mmlu.py, arc.py, gsm8k.py, humaneval.py, ...
-runs/               Shell scripts for training pipelines
-tests/              Unit tests
+1. Prepare datasets (FineWeb-Edu + Rust)
+2. Train tokenizer on combined data → 32K vocab BPE
+3. Stage 1: Pretrain on FineWeb-Edu → general language understanding
+4. Stage 2: Fine-tune on Rust code → Rust code generation
 ```
+
+### Datasets
+
+| Dataset | Source | Tokens | Disk Size | Purpose |
+|---|---|---|---|---|
+| [FineWeb-Edu](https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu) (sample-10BT) | Educational web text | 10B | ~27 GB | Stage 1: general language |
+| [The Stack Dedup](https://huggingface.co/datasets/bigcode/the-stack-dedup) (Rust) | Rust source code | ~5-8B | ~15 GB | Stage 2: Rust specialization |
+
+### Token Budget (d24 model, ~124M scaling params)
+
+| Stage | Dataset | data:param ratio | Tokens Trained |
+|---|---|---|---|
+| Stage 1 | FineWeb-Edu | 12 (default) | ~1.5B |
+| Stage 2 | Rust | 3 | ~0.4B |
+| **Total** | | | **~1.9B** |
+
+The `--target-param-data-ratio` controls how many tokens to train on relative to model size. Higher = more tokens, longer training, potentially better results. The default 12 is slightly undertrained for speed (Chinchilla-optimal is ~20).
 
 ## Quick Start
 
@@ -87,41 +81,77 @@ uv sync --extra gpu
 uv sync --extra cpu
 ```
 
-### Prepare Data
-
-The training uses the [NVIDIA Nemotron-ClimbMix](https://huggingface.co/datasets/nvidia/Nemotron-ClimbMix) dataset (400B tokens).
-
-**Option 1: Binary files (recommended, nanoGPT-style)**
+### Two-Stage Training (Full Pipeline)
 
 ```bash
-# Prepare all 10 parts (downloads from HuggingFace, tokenizes with GPT-2 BPE)
-bash data/climbmix/prepare.sh
-
-# Or prepare a single part for quick testing
-python data/climbmix/prepare.py --part 0
-python data/climbmix/merge.py
+# End-to-end: prepare data, train tokenizer, stage 1 + stage 2
+bash runs/twostage.sh
 ```
 
-**Option 2: Parquet files (streaming, tokenized on-the-fly)**
+Or run each step manually:
+
+#### 1. Prepare Datasets
 
 ```bash
-# Download parquet shards (~170 shards is enough for GPT-2 scale)
+export HF_HOME=/scratch/$USER/hf_cache
+
+# FineWeb-Edu (10BT sample, ~27 GB)
+python data/fineweb-edu/prepare.py --output-dir /scratch/$USER/etude/fineweb-edu
+
+# Rust from The Stack (gated — requires `huggingface-cli login`)
+python data/rust/prepare.py --output-dir /scratch/$USER/etude/rust
+```
+
+#### 2. Train Tokenizer (on combined data)
+
+```bash
+python -m scripts.tok_train --datasets fineweb-edu,rust
+python -m scripts.tok_eval
+```
+
+#### 3. Stage 1 — Pretrain on FineWeb-Edu
+
+```bash
+torchrun --standalone --nproc_per_node=8 -m scripts.base_train -- \
+    --dataset=fineweb-edu --model-tag="twostage-s1" --save-every=500
+```
+
+#### 4. Stage 2 — Fine-tune on Rust
+
+```bash
+torchrun --standalone --nproc_per_node=8 -m scripts.base_train -- \
+    --dataset=rust --model-tag="twostage-s2" --target-param-data-ratio=3 \
+    --resume-from-step=<S1_LAST_STEP> \
+    --resume-from-dir="$ETUDE_BASE_DIR/base_checkpoints/twostage-s1"
+```
+
+#### 5. Chat with the Model
+
+```bash
+python -m scripts.chat_cli -g twostage-s2
+python -m scripts.chat_web
+```
+
+### Single-Stage Training (ClimbMix)
+
+The original single-dataset training path is also supported:
+
+```bash
+# Prepare ClimbMix data
 python -m etude.dataset -n 170
-```
 
-### Train
+# Train tokenizer
+python -m scripts.tok_train
 
-```bash
-# Pretrain on 8 GPUs
+# Pretrain
 torchrun --standalone --nproc_per_node=8 -m scripts.base_train -- --depth=24
-
-# Pretrain on single GPU
-python -m scripts.base_train --depth=24
 
 # CPU / MacBook demo (tiny model)
 python -m scripts.base_train --depth=4 --max-seq-len=512 --device-batch-size=1 \
     --eval-tokens=512 --core-metric-every=-1 --total-batch-size=512 --num-iterations=20
 ```
+
+See `runs/speedrun.sh` for a full end-to-end example on 8×H100 GPUs.
 
 ### Evaluate
 
@@ -129,34 +159,54 @@ python -m scripts.base_train --depth=4 --max-seq-len=512 --device-batch-size=1 \
 torchrun --standalone --nproc_per_node=8 -m scripts.base_eval
 ```
 
-### Chat
+## Project Structure
 
-```bash
-# CLI
-python -m scripts.chat_cli
-
-# Web UI
-python -m scripts.chat_web
 ```
-
-## Training Pipeline
-
-1. **Tokenizer training** — `scripts/tok_train.py`
-2. **Pretraining** — `scripts/base_train.py` (distributed, gradient accumulation, FP8 optional)
-3. **Supervised fine-tuning** — `scripts/chat_sft.py`
-4. **Reinforcement learning** — `scripts/chat_rl.py`
-5. **Evaluation** — `scripts/base_eval.py`, `scripts/chat_eval.py`
-
-See `runs/speedrun.sh` for a full end-to-end example on 8×H100 GPUs.
+etude/              Core library
+  gpt.py              Model architecture
+  deltanet.py          Gated DeltaNet layer
+  flash_attention.py   FA3/SDPA unified interface
+  optim.py             Muon + AdamW optimizer
+  engine.py            Inference engine with KV cache
+  tokenizer.py         BPE tokenizer
+  dataloader.py        Distributed data loading
+  dataset.py           Dataset management (multi-dataset support)
+  checkpoint_manager.py  Checkpoint save/load
+  common.py            Shared utilities
+  fp8.py               FP8 training support
+  report.py            Training report generation
+scripts/            Training and evaluation
+  base_train.py        Pretraining (--dataset flag for data source)
+  base_eval.py         Evaluation (CORE metric, BPB)
+  chat_sft.py          Supervised fine-tuning
+  chat_rl.py           Reinforcement learning
+  chat_cli.py          Interactive CLI chat
+  chat_web.py          Web chat interface
+  tok_train.py         Tokenizer training (--datasets for combined training)
+  tok_eval.py          Tokenizer evaluation
+data/               Data preparation
+  fineweb-edu/         FineWeb-Edu dataset (educational web text)
+  rust/                Rust code from The Stack Dedup
+  climbmix/            Nemotron-ClimbMix (400B general text)
+tasks/              Evaluation tasks
+  mmlu.py, arc.py, gsm8k.py, humaneval.py, ...
+runs/               Shell scripts for training pipelines
+  twostage.sh          Two-stage: FineWeb-Edu pretrain + Rust fine-tune
+  speedrun.sh          Single-stage on 8×H100
+tests/              Unit tests
+```
 
 ## Key Features
 
+- **Two-stage training**: General language pretraining → domain specialization
+- **Multi-dataset support**: FineWeb-Edu, The Stack (Rust), ClimbMix, with HuggingFace streaming fallback
 - **Hybrid architecture**: Gated DeltaNet (linear attention) + Gated Attention for efficiency
 - **Flash Attention 3**: Automatic FA3 on Hopper GPUs, SDPA fallback elsewhere
 - **FP8 training**: Optional FP8 for faster training on H100+
 - **Muon optimizer**: Combined Muon (for matrices) + AdamW (for embeddings) with distributed support
 - **Multi-token prediction**: Auxiliary MTP loss for improved training
 - **Full inference stack**: KV cache, tool use (calculator), streaming generation
+- **Scaling laws**: Automatic batch size, learning rate, and weight decay scaling based on model size
 
 ## License
 
