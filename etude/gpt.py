@@ -49,7 +49,7 @@ class GPTConfig:
 
 
 def norm(x):
-    return F.rms_norm(x, (x.size(-1),))
+    return F.rms_norm(x, (x.size(-1),)).to(x.dtype)
 
 
 class Linear(nn.Linear):
