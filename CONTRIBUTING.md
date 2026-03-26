@@ -322,18 +322,38 @@ scontrol update jobid=<JOBID> TimeLimit=<NEW_TIME>
 
 When you only have limited GPU time (e.g. 1 hour per session), use `--save-every` to periodically save checkpoints and `--resume-from-step` to continue across sessions.
 
+> **Important:** Always use tmux inside the GPU session so training survives SSH disconnects.
+
 #### Full training (depth=24, default)
 
 ```bash
-# First session — start training
-srun --partition=sharing --nodes=1 --pty --gres=gpu:h100:1 --ntasks=1 --mem=80GB --time=1:00:00 /bin/bash
-torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
-    --save-every=100 --run="full-train" --model-tag="d24"
+# Request a GPU node
+srun --partition=sharing --nodes=1 --pty --gres=gpu:h100:1 --ntasks=1 --mem=80GB --time=2:00:00 /bin/bash
 
-# Next session — resume from last checkpoint
-srun --partition=sharing --nodes=1 --pty --gres=gpu:h100:1 --ntasks=1 --mem=80GB --time=1:00:00 /bin/bash
+# Start tmux inside the GPU node (survives SSH disconnects)
+TERM=xterm-256color tmux
+
+# Setup environment
+cd ~/Etude && source .venv/bin/activate
+export ETUDE_BASE_DIR=/scratch/$USER/etude
+export HF_HOME=/scratch/$USER/hf_cache
+
+# First session — start training
 torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
-    --save-every=100 --run="full-train" --model-tag="d24" \
+    --device-batch-size=16 --save-every=100 --run="full-train" --model-tag="d24"
+```
+
+To resume in a new session:
+
+```bash
+srun --partition=sharing --nodes=1 --pty --gres=gpu:h100:1 --ntasks=1 --mem=80GB --time=2:00:00 /bin/bash
+TERM=xterm-256color tmux
+cd ~/Etude && source .venv/bin/activate
+export ETUDE_BASE_DIR=/scratch/$USER/etude
+export HF_HOME=/scratch/$USER/hf_cache
+
+torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
+    --device-batch-size=16 --save-every=100 --run="full-train" --model-tag="d24" \
     --resume-from-step=<LAST_STEP>
 ```
 
@@ -341,17 +361,17 @@ torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
 
 ```bash
 torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
-    --depth=12 --save-every=100 --run="d12-single" --model-tag="d12"
+    --depth=12 --device-batch-size=16 --save-every=100 --run="d12-single" --model-tag="d12"
 ```
 
 #### Check saved checkpoints
 
 ```bash
-ls ~/base_checkpoints/d24/   # full model
-ls ~/base_checkpoints/d12/   # smaller model
+ls $ETUDE_BASE_DIR/base_checkpoints/d24/   # full model
+ls $ETUDE_BASE_DIR/base_checkpoints/d12/   # smaller model
 ```
 
-> **Tip:** Tune `--save-every` based on step speed. Save often enough that you don't lose more than ~5 min of work if the job gets killed.
+> **Tip:** Tune `--save-every` based on step speed. Save often enough that you don't lose more than ~5 min of work if the job gets killed. If you OOM with `--device-batch-size=16`, try `8` or `4`.
 
 ### Two-Stage Training (FineWeb-Edu + Rust)
 
@@ -360,19 +380,27 @@ Train a model that understands general language then specializes in Rust code ge
 ```bash
 # Full pipeline (prepare data, train tokenizer, stage 1 + stage 2)
 bash runs/twostage.sh
+```
 
-# Or run stages manually:
+Or run stages manually:
 
-# 1. Train tokenizer on combined data
-python -m scripts.tok_train --datasets fineweb-edu,rust
+```bash
+# Request GPU and setup tmux
+srun --partition=sharing --nodes=1 --pty --gres=gpu:h100:1 --ntasks=1 --mem=80GB --time=2:00:00 /bin/bash
+TERM=xterm-256color tmux
+cd ~/Etude && source .venv/bin/activate
+export ETUDE_BASE_DIR=/scratch/$USER/etude
+export HF_HOME=/scratch/$USER/hf_cache
 
-# 2. Stage 1: Pretrain on FineWeb-Edu
+# Stage 1: Pretrain on FineWeb-Edu
 torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
-    --dataset=fineweb-edu --model-tag="twostage-s1" --save-every=500
+    --dataset=fineweb-edu --device-batch-size=16 \
+    --model-tag="twostage-s1" --save-every=500 --run=dummy
 
-# 3. Stage 2: Fine-tune on Rust (loads stage 1 weights, resets optimizer)
+# Stage 2: Fine-tune on Rust (new GPU session if needed)
 torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
-    --dataset=rust --model-tag="twostage-s2" --target-param-data-ratio=3 \
+    --dataset=rust --device-batch-size=16 --target-param-data-ratio=3 \
+    --model-tag="twostage-s2" --save-every=100 --run=dummy \
     --resume-from-step=<S1_LAST_STEP> \
     --resume-from-dir="$ETUDE_BASE_DIR/base_checkpoints/twostage-s1"
 ```
