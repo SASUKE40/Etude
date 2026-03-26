@@ -24,9 +24,8 @@ def _detect_compute_dtype():
         capability = torch.cuda.get_device_capability()
         if capability >= (8, 0):
             return torch.bfloat16, f"auto-detected: CUDA SM {capability[0]}{capability[1]} (bf16 supported)"
-        # fp16 training requires GradScaler (not yet implemented), so fall back to fp32.
-        # Users can still force fp16 via ETUDE_DTYPE=float16 if they know what they're doing.
-        return torch.float32, f"auto-detected: CUDA SM {capability[0]}{capability[1]} (pre-Ampere, bf16 not supported, using fp32)"
+        # Pre-Ampere: use fp16 with GradScaler (enabled automatically in training scripts)
+        return torch.float16, f"auto-detected: CUDA SM {capability[0]}{capability[1]} (pre-Ampere, using fp16 with GradScaler)"
     return torch.float32, "auto-detected: no CUDA (CPU/MPS)"
 COMPUTE_DTYPE, COMPUTE_DTYPE_REASON = _detect_compute_dtype()
 

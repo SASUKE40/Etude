@@ -320,8 +320,7 @@ class GPT(nn.Module):
         self.cos, self.sin = cos, sin
 
         # Cast embeddings to COMPUTE_DTYPE
-        if COMPUTE_DTYPE != torch.float16:
-            self.transformer.wte.to(dtype=COMPUTE_DTYPE)
+        self.transformer.wte.to(dtype=COMPUTE_DTYPE)
 
     def _precompute_rotary_embeddings(self, seq_len, rope_dim, base=500000, device=None):
         """Precompute RoPE cos/sin for the given sequence length.

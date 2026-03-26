@@ -109,8 +109,10 @@ def muon_step_fused(
     momentum_buffer.lerp_(stacked_grads, 1 - momentum)
     g = stacked_grads.lerp_(momentum_buffer, momentum)
 
-    # Polar express
-    X = g.bfloat16()
+    # Polar express — use bf16 for Ampere+, fp16 for pre-Ampere
+    from etude.common import COMPUTE_DTYPE
+    polar_dtype = COMPUTE_DTYPE if COMPUTE_DTYPE in (torch.bfloat16, torch.float16) else torch.bfloat16
+    X = g.to(polar_dtype)
     X = X / (X.norm(dim=(-2, -1), keepdim=True) * 1.01 + 1e-6)
     if g.size(-2) > g.size(-1): # Tall matrix
         for a, b, c in polar_express_coeffs[:ns_steps]:
@@ -159,7 +161,7 @@ class MuonAdamW(torch.optim.Optimizer):
     Muon internally runs standard SGD-momentum, and then performs an orthogonalization post-
     processing step, in which each 2D parameter's update is replaced with the nearest orthogonal
     matrix. To efficiently orthogonalize each update, we use a Newton-Schulz iteration, which has
-    the advantage that it can be stably run in bfloat16 on the GPU.
+    the advantage that it can be stably run in half precision (bf16/fp16) on the GPU.
 
     Some warnings:
     - The Muon optimizer should not be used for the embedding layer, the final fully connected layer,

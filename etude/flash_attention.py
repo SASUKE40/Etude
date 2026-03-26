@@ -137,9 +137,11 @@ def flash_attn_func(q, k, v, causal=False, window_size=(-1, -1)):
         Output tensor of shape (B, T, H, D)
     """
     if USE_FA4:
-        # FA4 only supports fp16/bf16 — ensure inputs aren't float32
+        # FA4 only supports fp16/bf16 — cast float32 inputs to COMPUTE_DTYPE
         if q.dtype == torch.float32:
-            q, k, v = q.bfloat16(), k.bfloat16(), v.bfloat16()
+            from etude.common import COMPUTE_DTYPE
+            cast_dtype = COMPUTE_DTYPE if COMPUTE_DTYPE in (torch.bfloat16, torch.float16) else torch.bfloat16
+            q, k, v = q.to(cast_dtype), k.to(cast_dtype), v.to(cast_dtype)
         return _fa4_func(q, k, v, causal=causal, window_size=_to_fa4_window_size(window_size))
 
     # SDPA fallback: transpose (B, T, H, D) -> (B, H, T, D)
