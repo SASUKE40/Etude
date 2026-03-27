@@ -132,19 +132,19 @@ python -m scripts.chat_cli -g twostage-s2
 python -m scripts.chat_web
 ```
 
-### Single-Stage Training (ClimbMix)
+### Single-Stage Training (FineWeb-Edu)
 
-The original single-dataset training path is also supported:
+The single-dataset training path is also supported:
 
 ```bash
-# Prepare ClimbMix data
-python -m etude.dataset -n 170
+# Prepare FineWeb-Edu data
+python data/fineweb-edu/prepare.py
 
 # Train tokenizer
 python -m scripts.tok_train
 
 # Pretrain
-torchrun --standalone --nproc_per_node=8 -m scripts.base_train -- --depth=24
+torchrun --standalone --nproc_per_node=8 -m scripts.base_train --depth=24
 
 # CPU / MacBook demo (tiny model)
 python -m scripts.base_train --depth=4 --max-seq-len=512 --device-batch-size=1 \
@@ -187,7 +187,6 @@ scripts/            Training and evaluation
 data/               Data preparation
   fineweb-edu/         FineWeb-Edu dataset (educational web text)
   rust/                Rust code from The Stack Dedup
-  climbmix/            Nemotron-ClimbMix (400B general text)
 tasks/              Evaluation tasks
   mmlu.py, arc.py, gsm8k.py, humaneval.py, ...
 runs/               Shell scripts for training pipelines
@@ -199,7 +198,7 @@ tests/              Unit tests
 ## Key Features
 
 - **Two-stage training**: General language pretraining → domain specialization
-- **Multi-dataset support**: FineWeb-Edu, The Stack (Rust), ClimbMix, with HuggingFace streaming fallback
+- **Multi-dataset support**: FineWeb-Edu, The Stack (Rust), with HuggingFace streaming fallback
 - **Hybrid architecture**: Gated DeltaNet (linear attention) + Gated Attention for efficiency
 - **Flash Attention 4**: Automatic FA4 on Ampere+ GPUs (Hopper, Blackwell), SDPA fallback elsewhere
 - **FP8 training**: Optional FP8 for faster training on H100+

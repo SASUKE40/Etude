@@ -22,7 +22,7 @@ import pyarrow.parquet as pq
 from etude.common import get_dist_info
 from etude.dataset import list_parquet_files, HF_DATASETS, TEXT_COLUMNS
 
-def _has_local_parquets(dataset="climbmix"):
+def _has_local_parquets(dataset="fineweb-edu"):
     """Check if local parquet files exist for training."""
     try:
         paths = list_parquet_files(dataset=dataset)
@@ -30,7 +30,7 @@ def _has_local_parquets(dataset="climbmix"):
     except (FileNotFoundError, OSError):
         return False
 
-def _document_batches_parquet(split, resume_state_dict, tokenizer_batch_size, dataset="climbmix"):
+def _document_batches_parquet(split, resume_state_dict, tokenizer_batch_size, dataset="fineweb-edu"):
     """
     Infinite iterator over document batches from local parquet files.
 
@@ -79,7 +79,7 @@ def _document_batches_parquet(split, resume_state_dict, tokenizer_batch_size, da
         epoch += 1
 
 
-def _document_batches_hf(split, resume_state_dict, tokenizer_batch_size, dataset="climbmix"):
+def _document_batches_hf(split, resume_state_dict, tokenizer_batch_size, dataset="fineweb-edu"):
     """
     Infinite iterator over document batches streamed from HuggingFace.
 
@@ -97,10 +97,7 @@ def _document_batches_hf(split, resume_state_dict, tokenizer_batch_size, dataset
     epoch = resume_epoch
 
     while True:
-        if dataset == "climbmix":
-            data_files = ["part_99.jsonl"] if split == "val" else [f"part_{i}.jsonl" for i in range(99)]
-            ds = load_dataset(hf_id, data_files=data_files, split="train", streaming=True)
-        elif dataset == "fineweb-edu":
+        if dataset == "fineweb-edu":
             ds = load_dataset(hf_id, name="sample-10BT", split="train", streaming=True)
         elif dataset == "rust":
             ds = load_dataset(hf_id, data_dir="data/rust", split="train", streaming=True)
@@ -138,7 +135,7 @@ def _document_batches_hf(split, resume_state_dict, tokenizer_batch_size, dataset
         epoch += 1
 
 
-def _document_batches(split, resume_state_dict, tokenizer_batch_size, dataset="climbmix"):
+def _document_batches(split, resume_state_dict, tokenizer_batch_size, dataset="fineweb-edu"):
     """Auto-select local parquet or HuggingFace streaming based on data availability."""
     if _has_local_parquets(dataset=dataset):
         yield from _document_batches_parquet(split, resume_state_dict, tokenizer_batch_size, dataset=dataset)
@@ -150,7 +147,7 @@ def tokenizing_distributed_data_loader_with_state_bos_bestfit(
     tokenizer, B, T, split,
     tokenizer_threads=4, tokenizer_batch_size=128,
     device="cuda", resume_state_dict=None,
-    buffer_size=1000, dataset="climbmix",
+    buffer_size=1000, dataset="fineweb-edu",
 ):
     """
     BOS-aligned dataloader with Best-Fit Cropping.

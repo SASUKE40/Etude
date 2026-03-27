@@ -113,22 +113,16 @@ python -m scripts.base_eval
 
 ### Data Preparation
 
-The project uses the [NVIDIA Nemotron-ClimbMix](https://huggingface.co/datasets/nvidia/Nemotron-ClimbMix) dataset (400B tokens). The training pipeline uses **parquet streaming** — raw text parquet shards are downloaded, a custom BPE tokenizer is trained on them, and the dataloader tokenizes on-the-fly during training.
+The project uses the [FineWeb-Edu](https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu) dataset (10BT sample). The training pipeline uses **parquet streaming** — raw text parquet shards are downloaded, a custom BPE tokenizer is trained on them, and the dataloader tokenizes on-the-fly during training.
 
 > **Important:** Home directory has limited quota. Set `HF_HOME` to `/scratch` for the HuggingFace cache.
 
 #### Step 1: Download dataset (CPU-only)
 
-Downloads from [OptimalScale/ClimbMix](https://huggingface.co/datasets/OptimalScale/ClimbMix) (community raw-text version) and converts JSONL to parquet.
-
 ```bash
 export HF_HOME=/scratch/$USER/hf_cache
 
-# Download all 100 parts
-python -m etude.dataset -n -1
-
-# Or fewer parts for a quick start
-python -m etude.dataset -n 10
+python data/fineweb-edu/prepare.py
 ```
 
 #### Step 2: Train tokenizer (CPU-only)
@@ -202,27 +196,6 @@ A separate path uses GPT-2 tokenizer to produce pre-tokenized binary files. This
 ```bash
 export HF_HOME=/scratch/$USER/hf_cache
 
-# Full dataset (all 10 parts + merge, outputs to /scratch)
-bash data/climbmix/prepare.sh
-
-# Or manually, one part at a time
-python data/climbmix/prepare.py --part 0 --output-dir /scratch/$USER/etude_data/climbmix --num-proc 48
-python data/climbmix/merge.py --data-dir /scratch/$USER/etude_data/climbmix
-```
-
-| Script | Purpose |
-|---|---|
-| `data/climbmix/prepare.py` | Download & tokenize ClimbMix parts (0–9) with GPT-2 BPE |
-| `data/climbmix/merge.py` | Merge part files into `train.bin` / `val.bin` |
-| `data/climbmix/prepare.sh` | End-to-end ClimbMix binary prep script |
-
-#### FineWeb-Edu (educational web text)
-
-[FineWeb-Edu](https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu) is a high-quality educational subset of FineWeb. The 10BT sample is used by default.
-
-```bash
-export HF_HOME=/scratch/$USER/hf_cache
-
 # Download 10BT sample (recommended)
 python data/fineweb-edu/prepare.py --output-dir /scratch/$USER/etude/fineweb-edu
 
@@ -232,7 +205,7 @@ bash data/fineweb-edu/prepare.sh
 
 #### Rust fine-tuning data
 
-After ClimbMix pretraining, fine-tune on Rust code from [The Stack Dedup](https://huggingface.co/datasets/bigcode/the-stack-dedup).
+Fine-tune on Rust code from [The Stack Dedup](https://huggingface.co/datasets/bigcode/the-stack-dedup).
 
 > **Important:** This is a gated dataset. You must:
 > 1. Accept the terms at https://huggingface.co/datasets/bigcode/the-stack-dedup

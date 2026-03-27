@@ -30,7 +30,7 @@ print(f"vocab_size: {args.vocab_size:,}")
 if args.datasets:
     dataset_names = [d.strip() for d in args.datasets.split(",")]
 else:
-    dataset_names = ["climbmix"]  # default
+    dataset_names = ["fineweb-edu"]  # default
 print(f"datasets: {dataset_names}")
 
 # -----------------------------------------------------------------------------
