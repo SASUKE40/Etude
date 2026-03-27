@@ -17,7 +17,7 @@ mkdir -p "$ETUDE_BASE_DIR" "$HF_HOME"
 source .venv/bin/activate
 
 torchrun --standalone --nproc_per_node=1 \
-    -m scripts.base_train \
+    -m scripts.base_train -- \
     --depth=24 \
     --device-batch-size=16 \
     --save-every=100 \

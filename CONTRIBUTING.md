@@ -374,6 +374,15 @@ ls $ETUDE_BASE_DIR/base_checkpoints/d12/   # smaller model
 
 > **Tip:** Tune `--save-every` based on step speed. Save often enough that you don't lose more than ~5 min of work if the job gets killed. If you OOM with `--device-batch-size=16`, try `8` or `4`.
 
+#### Debugging torch.compile
+
+The first run triggers `torch.compile`, which can take 5–15 minutes on H100. If training appears stuck, enable verbose compile logs:
+
+```bash
+TORCH_LOGS="dynamo,inductor" TORCHDYNAMO_VERBOSE=1 torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
+    --save-every=100 --run="full-train" --model-tag="d24"
+```
+
 ### Two-Stage Training (FineWeb-Edu + Rust)
 
 Train a model that understands general language then specializes in Rust code generation:
