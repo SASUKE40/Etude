@@ -77,6 +77,7 @@ USE_FA3 = USE_FA4
 # =============================================================================
 # SDPA helpers
 # =============================================================================
+@torch.compiler.disable
 def _sdpa_attention(q, k, v, window_size, enable_gqa):
     """
     SDPA attention with sliding window support.
