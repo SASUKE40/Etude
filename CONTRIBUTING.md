@@ -111,6 +111,12 @@ python -m scripts.base_train --depth=4 --max-seq-len=512 \
 python -m scripts.base_eval
 ```
 
+`--device-batch-size` is the per-device micro-batch size: how many sequences one GPU processes in a single forward/backward pass. The effective batch seen by the optimizer is:
+
+`device_batch_size × max_seq_len × num_devices × grad_accum_steps`
+
+If you run out of VRAM, reduce `--device-batch-size` first.
+
 ### Data Preparation
 
 The project uses the [FineWeb-Edu](https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu) dataset (10BT sample). The training pipeline uses **parquet streaming** — raw text parquet shards are downloaded, a custom BPE tokenizer is trained on them, and the dataloader tokenizes on-the-fly during training.
@@ -344,6 +350,10 @@ torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
     --device-batch-size=16 --save-every=100 --run="full-train" --model-tag="d24"
 ```
 
+`torchrun --nproc_per_node=1` starts one training process on this node, which for this setup means one GPU. On a single H100, `--device-batch-size=16` is a reasonable starting point for the default `d24` model. If you OOM, reduce it to `8` or `4`.
+
+With multiple GPUs on one node, set `--nproc_per_node` to the number of GPUs you want to use. For example, `--nproc_per_node=8` launches eight processes, typically one per GPU.
+
 To resume in a new session:
 
 ```bash
@@ -380,7 +390,10 @@ The first run triggers `torch.compile`, which can take 5–15 minutes on H100. I
 
 ```bash
 TORCH_LOGS="dynamo,inductor" TORCHDYNAMO_VERBOSE=1 torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
-    --save-every=100 --run="full-train" --model-tag="d24"
+    --device-batch-size=16 \
+    --save-every=100 \
+    --run="full-train" \
+    --model-tag="d24"
 ```
 
 ### Two-Stage Training (FineWeb-Edu + Rust)
