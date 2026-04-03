@@ -76,6 +76,7 @@ torchrun --standalone --nproc_per_node=$NGPU -m scripts.base_train -- \
     --run="${WANDB_RUN}-s1"
 
 torchrun --standalone --nproc_per_node=$NGPU -m scripts.base_eval -- \
+    --model-tag="twostage-s1" \
     --device-batch-size=16
 
 # -----------------------------------------------------------------------------
@@ -85,7 +86,11 @@ echo "=== Step 4: Stage 2 — Fine-tuning on Rust ==="
 
 # Find the last checkpoint step from stage 1
 S1_DIR="$ETUDE_BASE_DIR/base_checkpoints/twostage-s1"
-LAST_STEP=$(ls "$S1_DIR/" | grep -o 'step_[0-9]*' | sort -t_ -k2 -n | tail -1 | grep -o '[0-9]*')
+LAST_STEP=$(find "$S1_DIR" -maxdepth 1 -name 'model_*.pt' | sed -E 's#^.*/model_([0-9]+)\.pt$#\1#' | sort -n | tail -1)
+if [ -z "$LAST_STEP" ]; then
+    echo "ERROR: No stage 1 checkpoints found in $S1_DIR"
+    exit 1
+fi
 echo "Loading stage 1 checkpoint from step $LAST_STEP"
 
 torchrun --standalone --nproc_per_node=$NGPU -m scripts.base_train -- \
@@ -100,6 +105,7 @@ torchrun --standalone --nproc_per_node=$NGPU -m scripts.base_train -- \
     --run="${WANDB_RUN}-s2"
 
 torchrun --standalone --nproc_per_node=$NGPU -m scripts.base_eval -- \
+    --model-tag="twostage-s2" \
     --device-batch-size=16
 
 # -----------------------------------------------------------------------------
