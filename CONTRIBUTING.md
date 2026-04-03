@@ -403,6 +403,9 @@ Train a model that understands general language then specializes in Rust code ge
 ```bash
 # Full pipeline (prepare data, train tokenizer, stage 1 + stage 2)
 bash runs/twostage.sh
+
+# Single H100 example
+NGPU=1 DEPTH=24 WANDB_RUN=twostage bash runs/twostage.sh
 ```
 
 Or run stages manually:
