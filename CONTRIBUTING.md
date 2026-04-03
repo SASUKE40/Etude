@@ -375,6 +375,54 @@ torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
     --depth=12 --device-batch-size=16 --save-every=100 --run="d12-single" --model-tag="d12"
 ```
 
+#### Smaller training with WandB
+
+Use a smaller model and shorter run to verify training, logging, and validation behavior before committing to a full `d24` run:
+
+```bash
+cd ~/Etude && source .venv/bin/activate
+export ETUDE_BASE_DIR=/scratch/$USER/etude
+export HF_HOME=/scratch/$USER/hf_cache
+export WANDB_PROJECT=etude
+export WANDB_ENTITY=YOUR_WANDB_ENTITY
+
+torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
+    --run="small-smoke" \
+    --model-tag="small-smoke" \
+    --dataset=fineweb-edu \
+    --depth=8 \
+    --n-embd=512 \
+    --max-seq-len=1024 \
+    --device-batch-size=4 \
+    --total-batch-size=32768 \
+    --num-iterations=500 \
+    --eval-every=100 \
+    --eval-tokens=32768 \
+    --core-metric-every=-1 \
+    --sample-every=-1 \
+    --save-every=100
+```
+
+For an even faster compile/debug pass:
+
+```bash
+torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
+    --run="tiny-smoke" \
+    --model-tag="tiny-smoke" \
+    --dataset=fineweb-edu \
+    --depth=4 \
+    --n-embd=384 \
+    --max-seq-len=512 \
+    --device-batch-size=2 \
+    --total-batch-size=8192 \
+    --num-iterations=200 \
+    --eval-every=50 \
+    --eval-tokens=8192 \
+    --core-metric-every=-1 \
+    --sample-every=-1 \
+    --save-every=50
+```
+
 #### Check saved checkpoints
 
 ```bash
