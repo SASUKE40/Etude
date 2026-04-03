@@ -143,7 +143,10 @@ def flash_attn_func(q, k, v, causal=False, window_size=(-1, -1)):
             from etude.common import COMPUTE_DTYPE
             cast_dtype = COMPUTE_DTYPE if COMPUTE_DTYPE in (torch.bfloat16, torch.float16) else torch.bfloat16
             q, k, v = q.to(cast_dtype), k.to(cast_dtype), v.to(cast_dtype)
-        return _fa4_func(q, k, v, causal=causal, window_size=_to_fa4_window_size(window_size))
+        y = _fa4_func(q, k, v, causal=causal, window_size=_to_fa4_window_size(window_size))
+        # Some FA4 builds return auxiliary values such as softmax stats alongside
+        # the attention output. Normalize to the output tensor only.
+        return y[0] if isinstance(y, tuple) else y
 
     # SDPA fallback: transpose (B, T, H, D) -> (B, H, T, D)
     q = q.transpose(1, 2)
