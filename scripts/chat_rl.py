@@ -19,6 +19,7 @@ torchrun --standalone --nproc_per_node=8 -m scripts.chat_rl -- --run=default
 import argparse
 import os
 import itertools
+import math
 import wandb
 import torch
 import torch.distributed as dist
@@ -99,12 +100,13 @@ def get_batch():
         model.eval() # ensure the model is in eval mode
         generated_token_sequences = []
         masks = []
-        num_sampling_steps = args.num_samples // args.device_batch_size # go sequentially to prevent OOMs
+        num_sampling_steps = math.ceil(args.num_samples / args.device_batch_size) # go sequentially to prevent OOMs
         for sampling_step in range(num_sampling_steps):
+            batch_num_samples = min(args.device_batch_size, args.num_samples - sampling_step * args.device_batch_size)
             seed = hash((step, example_idx, sampling_step)) & 0x7FFFFFFF # positive half of int32
             generated_token_sequences_batch, masks_batch = engine.generate_batch(
                 tokens,
-                num_samples=args.device_batch_size,
+                num_samples=batch_num_samples,
                 max_tokens=args.max_new_tokens,
                 temperature=args.temperature,
                 top_k=args.top_k,

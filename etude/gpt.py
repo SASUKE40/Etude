@@ -57,7 +57,8 @@ class Linear(nn.Linear):
     Replaces autocast: master weights stay fp32 for optimizer precision,
     but matmuls run in the activation dtype (typically bf16 from embeddings)."""
     def forward(self, x):
-        return F.linear(x, self.weight.to(dtype=x.dtype))
+        bias = None if self.bias is None else self.bias.to(dtype=x.dtype)
+        return F.linear(x, self.weight.to(dtype=x.dtype), bias)
 
 
 def apply_rotary_emb(x, cos, sin, rope_dim):

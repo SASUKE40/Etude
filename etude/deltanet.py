@@ -27,7 +27,8 @@ def norm(x):
 class Linear(nn.Linear):
     """nn.Linear that casts weights to match input dtype in forward."""
     def forward(self, x):
-        return F.linear(x, self.weight.to(dtype=x.dtype))
+        bias = None if self.bias is None else self.bias.to(dtype=x.dtype)
+        return F.linear(x, self.weight.to(dtype=x.dtype), bias)
 
 
 class GatedDeltaNet(nn.Module):
