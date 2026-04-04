@@ -123,8 +123,11 @@ if use_dummy_wandb:
 else:
     wandb_kwargs = dict(project="etude", name=args.run, config=user_config)
     if wandb_run_id is not None:
-        wandb_kwargs.update(id=wandb_run_id, resume="must")
-        print0(f"Resuming W&B run id: {wandb_run_id}")
+        # Older checkpoints may have a synthesized run id that was never created on W&B.
+        # "allow" appends to an existing run when present, and otherwise starts a new run
+        # with the requested id so resume does not hard-fail.
+        wandb_kwargs.update(id=wandb_run_id, resume="allow")
+        print0(f"Using W&B run id: {wandb_run_id}")
     wandb_run = wandb.init(**wandb_kwargs)
 
 # Flash Attention status

@@ -253,6 +253,31 @@ torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
   --resume-from-step=5
 ```
 
+Run the same resume flow as a Slurm batch job with:
+
+```bash
+sbatch runs/d24_h100_resume.slurm
+```
+
+Follow Slurm logs with:
+
+```bash
+tail -f runs/d24-h100-*.log
+```
+
+To follow only the newest log:
+
+```bash
+tail -f "$(ls -t runs/d24-h100-*.log | head -1)"
+```
+
+Check job status with:
+
+```bash
+squeue -u $USER
+sacct -j <job_id>
+```
+
 Training logs are printed in a compact one-line format, for example:
 
 ```text
