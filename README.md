@@ -200,6 +200,22 @@ python -m scripts.chat_cli -i base -g qwen35-h100-smoke -s 10 --device-type cuda
 
 This is only a checkpoint-loading smoke test. A base model trained for 10 steps is not instruction-tuned, so the output will be poor.
 
+For a larger single-H100 checkpoint, for example step 700 of `d24-h100`:
+
+```bash
+cd ~/Etude && source .venv/bin/activate
+export ETUDE_BASE_DIR=/scratch/$USER/etude
+export HF_HOME=/scratch/$USER/hf_cache
+
+python -m scripts.chat_cli -i base -g d24-h100 -s 700 --device-type cuda
+```
+
+For a one-shot prompt:
+
+```bash
+python -m scripts.chat_cli -i base -g d24-h100 -s 700 --device-type cuda -p "hello"
+```
+
 For a single-H100 full-depth training run with a safer sequence length and micro-batch size:
 
 ```bash
