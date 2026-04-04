@@ -151,6 +151,35 @@ python -m scripts.base_train --depth=4 --max-seq-len=512 --device-batch-size=1 \
     --eval-tokens=512 --core-metric-every=-1 --total-batch-size=512 --num-iterations=20
 ```
 
+For a 1×H100 Qwen 3.5 smoke run with per-step W&B logging:
+
+```bash
+cd ~/Etude && source .venv/bin/activate
+export ETUDE_BASE_DIR=/scratch/$USER/etude
+export HF_HOME=/scratch/$USER/hf_cache
+export WANDB_PROJECT=etude
+export WANDB_ENTITY=YOUR_WANDB_ENTITY
+
+torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
+    --device-type=cuda \
+    --depth=4 \
+    --n-embd=256 \
+    --max-seq-len=256 \
+    --device-batch-size=2 \
+    --total-batch-size=512 \
+    --num-iterations=10 \
+    --log-every=1 \
+    --eval-every=1 \
+    --eval-tokens=1024 \
+    --core-metric-every=-1 \
+    --sample-every=-1 \
+    --save-every=-1 \
+    --run="tiny-smoke" \
+    --model-tag="qwen35-h100-smoke"
+```
+
+If you want to exercise the H100-specific FP8 path too, add `--fp8`.
+
 See `runs/speedrun.sh` for a full end-to-end example on 8×H100 GPUs.
 
 ### Evaluate
