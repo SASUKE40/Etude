@@ -32,9 +32,11 @@ resolve_latest_log() {
     local prefix
     local matches=()
 
-    prefix="${input%.log}"
-    prefix="${prefix%-*}"
-    prefix="${prefix#runs/}"
+    prefix="${input#runs/}"
+    if [[ "$prefix" == *.log ]]; then
+        prefix="${prefix%.log}"
+        prefix="${prefix%-*}"
+    fi
 
     case "$prefix" in
         d24-h100|d24-h200)
