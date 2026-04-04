@@ -237,6 +237,27 @@ torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
   --resume-from-step=5
 ```
 
+Training logs are printed in a compact one-line format, for example:
+
+```text
+step 00499/182414 (0.27%) | loss: 6.397844 | lrm: 1.00 | dt: 3830.24ms | tok/sec: 8,555 | bf16_mfu: 4.03 | epoch: 1 pq: 0 rg: 33 | total time: 63.01m | eta: 23441.6m
+```
+
+Field meanings:
+
+- `step 00499/182414`: current optimizer step and total planned steps.
+- `(0.27%)`: percent of planned optimization steps completed.
+- `loss`: EMA-smoothed training loss for logging.
+- `lrm`: learning-rate multiplier from the scheduler.
+- `dt`: wall-clock time for one optimizer step, including gradient accumulation.
+- `tok/sec`: effective optimizer-step throughput in tokens per second.
+- `bf16_mfu`: model FLOPs utilization, as a percent of theoretical BF16 peak FLOPs.
+- `epoch`: current pass through the dataset.
+- `pq`: current parquet shard index.
+- `rg`: current parquet row-group index within the shard.
+- `total time`: accumulated training time tracked by the script.
+- `eta`: estimated minutes remaining based on average measured step time so far.
+
 See `runs/speedrun.sh` for a full end-to-end example on 8×H100 GPUs.
 
 ### Evaluate
