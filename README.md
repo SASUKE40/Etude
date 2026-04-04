@@ -259,6 +259,18 @@ Run the same resume flow as a Slurm batch job with:
 sbatch runs/d24_h100_resume.slurm
 ```
 
+To automatically resubmit when Slurm kills the job for hitting the time limit, run a watcher against the batch log:
+
+```bash
+bash runs/watch_slurm_time_limit.sh runs/d24-h100-<job_id>.log
+```
+
+For known resume logs, the watcher infers the right `sbatch` file. You can also pass one explicitly:
+
+```bash
+bash runs/watch_slurm_time_limit.sh runs/d24-h100-<job_id>.log runs/d24_h100_resume.slurm
+```
+
 Follow Slurm logs with:
 
 ```bash
