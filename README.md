@@ -200,6 +200,43 @@ python -m scripts.chat_cli -i base -g qwen35-h100-smoke -s 10 --device-type cuda
 
 This is only a checkpoint-loading smoke test. A base model trained for 10 steps is not instruction-tuned, so the output will be poor.
 
+For a single-H100 full-depth training run with a safer sequence length and micro-batch size:
+
+```bash
+cd ~/Etude && source .venv/bin/activate
+export ETUDE_BASE_DIR=/scratch/$USER/etude
+export HF_HOME=/scratch/$USER/hf_cache
+export WANDB_PROJECT=etude
+export WANDB_ENTITY=edward40
+
+torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
+  --device-type=cuda \
+  --fp8 \
+  --depth=24 \
+  --max-seq-len=1024 \
+  --device-batch-size=2 \
+  --total-batch-size=32768 \
+  --save-every=100 \
+  --run="full-train-h100" \
+  --model-tag="d24-h100"
+```
+
+Resume from a saved checkpoint with:
+
+```bash
+torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
+  --device-type=cuda \
+  --fp8 \
+  --depth=24 \
+  --max-seq-len=1024 \
+  --device-batch-size=2 \
+  --total-batch-size=32768 \
+  --save-every=100 \
+  --run="full-train-h100" \
+  --model-tag="d24-h100" \
+  --resume-from-step=5
+```
+
 See `runs/speedrun.sh` for a full end-to-end example on 8×H100 GPUs.
 
 ### Evaluate
