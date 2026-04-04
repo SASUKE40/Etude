@@ -12,3 +12,5 @@ eval_bundle/
 CLAUDE.md
 wandb/
 .claude/
+server/
+uv.lock
