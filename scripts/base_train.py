@@ -108,12 +108,14 @@ stage_transition = args.resume_from_dir is not None and args.resume_from_dir != 
 # wandb logging init
 use_dummy_wandb = args.run == "dummy" or not master_process
 wandb_run_id = None
+wandb_run_id_from_checkpoint = False
 if resuming and not stage_transition:
     resume_meta_path = os.path.join(resume_checkpoint_dir, f"meta_{args.resume_from_step:06d}.json")
     if os.path.exists(resume_meta_path):
         with open(resume_meta_path, "r", encoding="utf-8") as f:
             resume_meta = json.load(f)
         wandb_run_id = resume_meta.get("wandb_run_id")
+        wandb_run_id_from_checkpoint = wandb_run_id is not None
     if wandb_run_id is None:
         # Deterministic fallback for older checkpoints that predate wandb_run_id metadata.
         wandb_run_id = hashlib.sha1(f"{checkpoint_dir}:{args.run}".encode("utf-8")).hexdigest()[:16]
@@ -121,14 +123,23 @@ if resuming and not stage_transition:
 if use_dummy_wandb:
     wandb_run = DummyWandb()
 else:
-    wandb_kwargs = dict(project="etude", name=args.run, config=user_config)
+    wandb_kwargs = dict(
+        project=os.environ.get("WANDB_PROJECT", "etude"),
+        entity=os.environ.get("WANDB_ENTITY"),
+        name=args.run,
+        config=user_config,
+    )
     if wandb_run_id is not None:
-        # Older checkpoints may have a synthesized run id that was never created on W&B.
-        # "allow" appends to an existing run when present, and otherwise starts a new run
-        # with the requested id so resume does not hard-fail.
-        wandb_kwargs.update(id=wandb_run_id, resume="allow")
+        # If the checkpoint already stores a real W&B run id, require resuming that exact
+        # run so logging continues in the same history after preemption/time limits.
+        # For older checkpoints that predate wandb_run_id metadata, fall back to "allow"
+        # because the synthesized id may not exist remotely.
+        resume_mode = "must" if wandb_run_id_from_checkpoint else "allow"
+        wandb_kwargs.update(id=wandb_run_id, resume=resume_mode)
         print0(f"Using W&B run id: {wandb_run_id}")
     wandb_run = wandb.init(**wandb_kwargs)
+    wandb_run.define_metric("step")
+    wandb_run.define_metric("*", step_metric="step")
 
 # Flash Attention status
 from etude.flash_attention import USE_FA4
