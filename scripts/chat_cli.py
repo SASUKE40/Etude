@@ -70,11 +70,15 @@ def generate_qwen_reply(model, tokenizer, conversation_messages, user_input, tem
     response_tokens = []
     print("\nAssistant: ", end="", flush=True)
     stop_tokens = {token for token in [im_end, eos, bos] if token is not None}
+    printed_text = ""
     for token in model.generate(ids, max_tokens=256, temperature=temperature, top_k=top_k):
         if token in stop_tokens:
             break
         response_tokens.append(token)
-        print(tokenizer.decode([token]), end="", flush=True)
+        decoded_text = tokenizer.decode(response_tokens)
+        if len(decoded_text) > len(printed_text):
+            print(decoded_text[len(printed_text):], end="", flush=True)
+            printed_text = decoded_text
     print()
     return tokenizer.decode(response_tokens)
 

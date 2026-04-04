@@ -180,6 +180,24 @@ torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
 
 If you want to exercise the H100-specific FP8 path too, add `--fp8`.
 
+To load the resulting base checkpoint and chat with it:
+
+```bash
+cd ~/Etude && source .venv/bin/activate
+export ETUDE_BASE_DIR=/scratch/$USER/etude
+export HF_HOME=/scratch/$USER/hf_cache
+
+python -m scripts.chat_cli -i base -g qwen35-h100-smoke -s 10 --device-type cuda
+```
+
+For a one-shot prompt:
+
+```bash
+python -m scripts.chat_cli -i base -g qwen35-h100-smoke -s 10 --device-type cuda -p "hello"
+```
+
+This is only a checkpoint-loading smoke test. A base model trained for 10 steps is not instruction-tuned, so the output will be poor.
+
 See `runs/speedrun.sh` for a full end-to-end example on 8×H100 GPUs.
 
 ### Evaluate
