@@ -278,6 +278,8 @@ squeue -u $USER
 sacct -j <job_id>
 ```
 
+`sbatch` jobs are non-interactive, so there is no shell session to reattach to later. Use `tail -f runs/d24-h100-<job_id>.log` to watch progress. If you need a reconnectable shell on the GPU node, start an interactive allocation with `srun --pty` and run `tmux` inside it.
+
 Training logs are printed in a compact one-line format, for example:
 
 ```text
