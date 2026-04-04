@@ -158,7 +158,7 @@ cd ~/Etude && source .venv/bin/activate
 export ETUDE_BASE_DIR=/scratch/$USER/etude
 export HF_HOME=/scratch/$USER/hf_cache
 export WANDB_PROJECT=etude
-export WANDB_ENTITY=YOUR_WANDB_ENTITY
+export WANDB_ENTITY=edward40
 
 torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
     --device-type=cuda \
@@ -179,6 +179,8 @@ torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
 ```
 
 If you want to exercise the H100-specific FP8 path too, add `--fp8`.
+
+If your W&B account is already configured locally, you can omit `WANDB_ENTITY`. If you do not want W&B logging for the smoke run, set `--run=dummy`.
 
 To load the resulting base checkpoint and chat with it:
 
