@@ -15,7 +15,7 @@ The first argument may be either:
   - a specific log file, such as runs/d24-h100-5677184.log
   - a known log prefix, such as d24-h100 or runs/d24-h100
 
-When given a known prefix, the watcher picks the newest matching log file automatically.
+When given a known prefix, the watcher picks the newest matching log file by modification time automatically.
 
 If sbatch_script is omitted, the script will infer one for known log prefixes:
   runs/d24-h100-<jobid>.log -> runs/d24_h100_resume.slurm
@@ -55,7 +55,7 @@ resolve_latest_log() {
         return 1
     fi
 
-    printf '%s\n' "${matches[@]}" | LC_ALL=C sort | tail -1
+    ls -t "${matches[@]}" | head -1
 }
 
 infer_sbatch_script() {
