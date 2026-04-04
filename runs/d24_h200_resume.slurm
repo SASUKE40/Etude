@@ -22,6 +22,7 @@ mkdir -p "$ETUDE_BASE_DIR" "$HF_HOME"
 source .venv/bin/activate
 
 SAVE_EVERY="${SAVE_EVERY:-100}"
+LOG_EVERY="${LOG_EVERY:-1}"
 RUN_NAME="${RUN_NAME:-full-train-h100}"
 MODEL_TAG="${MODEL_TAG:-d24-h100}"
 CHECKPOINT_DIR="${CHECKPOINT_DIR:-$ETUDE_BASE_DIR/base_checkpoints/$MODEL_TAG}"
@@ -54,6 +55,7 @@ torchrun --standalone --nproc_per_node=1 -m scripts.base_train -- \
     --max-seq-len=1024 \
     --device-batch-size=2 \
     --total-batch-size=32768 \
+    --log-every="${LOG_EVERY}" \
     --save-every="${SAVE_EVERY}" \
     --run="${RUN_NAME}" \
     --model-tag="${MODEL_TAG}" \
