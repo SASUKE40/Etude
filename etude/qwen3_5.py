@@ -167,7 +167,7 @@ class _Qwen3_5ConfigAdapter:
         self.linear_conv_kernel_dim = config.linear_conv_kernel_dim
         self.hidden_act = "silu"
         self.rms_norm_eps = config.rms_norm_eps
-        self.dtype = None
+        self.dtype = COMPUTE_DTYPE
 
 
 class TransformerBlock(nn.Module):
