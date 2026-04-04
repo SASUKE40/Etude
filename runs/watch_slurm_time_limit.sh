@@ -16,7 +16,10 @@ The first argument may be either:
   - a specific log file, such as runs/d24-h100-5677184.log
   - a known log prefix, such as d24-h100 or runs/d24-h100
 
-When given a known prefix, the watcher picks the newest matching log file by modification time automatically.
+When given a known prefix, the watcher picks the newest matching log file by
+modification time automatically. If no matching log exists yet, it waits for
+the first one to appear. If an explicit log path is given and the file does not
+exist yet, it waits for that file.
 
 If sbatch_script is omitted, the script will infer one for known log prefixes:
   runs/d24-h100-<jobid>.log -> runs/d24_h100_resume.slurm
@@ -28,10 +31,9 @@ Environment:
 EOF
 }
 
-resolve_latest_log() {
+normalize_log_prefix() {
     local input="$1"
     local prefix
-    local matches=()
 
     prefix="${input#runs/}"
     if [[ "$prefix" == *.log ]]; then
@@ -49,6 +51,16 @@ resolve_latest_log() {
             ;;
     esac
 
+    printf '%s\n' "$prefix"
+}
+
+resolve_latest_log() {
+    local input="$1"
+    local prefix
+    local matches=()
+
+    prefix="$(normalize_log_prefix "$input")" || return 1
+
     shopt -s nullglob
     matches=(runs/"${prefix}"-*.log)
     shopt -u nullglob
@@ -62,14 +74,16 @@ resolve_latest_log() {
 }
 
 infer_sbatch_script() {
-    local log_file="$1"
-    local base
-    base="$(basename "$log_file")"
-    case "$base" in
-        d24-h100-*.log) echo "runs/d24_h100_resume.slurm" ;;
-        d24-h200-*.log) echo "runs/d24_h200_resume.slurm" ;;
+    local input="$1"
+    local prefix
+
+    prefix="$(normalize_log_prefix "$input")" || return 1
+
+    case "$prefix" in
+        d24-h100) echo "runs/d24_h100_resume.slurm" ;;
+        d24-h200) echo "runs/d24_h200_resume.slurm" ;;
         *)
-            echo "ERROR: Could not infer sbatch script from log file '$log_file'." >&2
+            echo "ERROR: Could not infer sbatch script from '$input'." >&2
             echo "Pass the sbatch script explicitly." >&2
             return 1
             ;;
@@ -193,6 +207,33 @@ wait_for_next_log() {
     done
 }
 
+wait_for_existing_log() {
+    local log_file="$1"
+    local poll_seconds="$2"
+
+    echo "Waiting for log file $log_file" >&2
+    while [ ! -f "$log_file" ]; do
+        sleep "$poll_seconds"
+    done
+    printf '%s\n' "$log_file"
+}
+
+wait_for_first_log_for_prefix() {
+    local prefix="$1"
+    local poll_seconds="$2"
+    local log_file=""
+
+    echo "No log files found yet for prefix '$prefix'. Waiting for the first matching log." >&2
+    while true; do
+        log_file="$(resolve_latest_log "$prefix" 2>/dev/null || true)"
+        if [ -n "$log_file" ]; then
+            printf '%s\n' "$log_file"
+            return 0
+        fi
+        sleep "$poll_seconds"
+    done
+}
+
 main() {
     if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
         usage
@@ -211,18 +252,27 @@ main() {
     local state_dir="${STATE_DIR:-runs/.resubmitted}"
     local pattern='slurmstepd: error: \*\*\* JOB ([0-9]+) ON .* DUE TO TIME LIMIT \*\*\*'
     local output_template
-
-    if [ ! -f "$log_file" ]; then
-        log_file="$(resolve_latest_log "$log_input")"
-    fi
+    local prefix=""
 
     if [ -z "$sbatch_script" ]; then
-        sbatch_script="$(infer_sbatch_script "$log_file")"
+        sbatch_script="$(infer_sbatch_script "$log_input")"
     fi
 
     if [ ! -f "$sbatch_script" ]; then
         echo "ERROR: sbatch script '$sbatch_script' does not exist." >&2
         exit 1
+    fi
+
+    if [ -f "$log_input" ]; then
+        log_file="$log_input"
+    elif [[ "$log_input" == *.log ]]; then
+        log_file="$(wait_for_existing_log "$log_input" "$poll_seconds")"
+    else
+        prefix="$(normalize_log_prefix "$log_input")"
+        log_file="$(resolve_latest_log "$prefix" 2>/dev/null || true)"
+        if [ -z "$log_file" ]; then
+            log_file="$(wait_for_first_log_for_prefix "$prefix" "$poll_seconds")"
+        fi
     fi
 
     output_template="$(infer_output_template "$sbatch_script")"
