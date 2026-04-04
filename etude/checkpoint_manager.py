@@ -10,6 +10,7 @@ import torch
 
 from etude.common import get_base_dir
 from etude.gpt import GPT, GPTConfig
+from etude.qwen3_5 import Qwen3_5Config, Qwen3_5Model
 from etude.tokenizer import get_tokenizer
 from etude.common import setup_default_logging
 
@@ -27,6 +28,10 @@ def _patch_missing_config_keys(model_config_kwargs):
 def _patch_missing_keys(model_data, model_config):
     """Add default values for new parameters that may be missing in old checkpoints."""
     pass
+
+
+def _is_qwen3_5_config(model_config_kwargs):
+    return "n_heads" in model_config_kwargs and "attn_q_heads" not in model_config_kwargs
 
 def save_checkpoint(checkpoint_dir, step, model_data, optimizer_data, meta_data, rank=0):
     if rank == 0:
@@ -84,10 +89,15 @@ def build_model(checkpoint_dir, step, device, phase):
     model_config_kwargs = meta_data["model_config"]
     _patch_missing_config_keys(model_config_kwargs)
     log0(f"Building model with config: {model_config_kwargs}")
-    model_config = GPTConfig(**model_config_kwargs)
+    if _is_qwen3_5_config(model_config_kwargs):
+        model_config = Qwen3_5Config(**model_config_kwargs)
+        model_cls = Qwen3_5Model
+    else:
+        model_config = GPTConfig(**model_config_kwargs)
+        model_cls = GPT
     _patch_missing_keys(model_data, model_config)
     with torch.device("meta"):
-        model = GPT(model_config)
+        model = model_cls(model_config)
     # Load the model state
     model.to_empty(device=device)
     model.init_weights() # note: this is dumb, but we need to init the rotary embeddings. TODO: fix model re-init

@@ -25,13 +25,12 @@ import wandb
 import torch
 import torch.distributed as dist
 
-from etude.gpt import GPT, GPTConfig, Linear
+from etude.qwen3_5 import Qwen3_5Model, Qwen3_5Config, Linear
 from etude.dataloader import tokenizing_distributed_data_loader_bos_bestfit, tokenizing_distributed_data_loader_with_state_bos_bestfit
 from etude.common import compute_init, compute_cleanup, print0, DummyWandb, print_banner, get_base_dir, autodetect_device_type, get_peak_flops, COMPUTE_DTYPE, COMPUTE_DTYPE_REASON, is_ddp_initialized
 from etude.tokenizer import get_tokenizer, get_token_bytes
 from etude.checkpoint_manager import save_checkpoint, load_checkpoint
 from etude.loss_eval import evaluate_bpb
-from etude.engine import Engine
 from etude.flash_attention import HAS_FA4
 from scripts.base_eval import evaluate_core
 print_banner()
@@ -127,13 +126,24 @@ def build_model_meta(depth, n_embd=None):
     """Build a model on meta device for a given depth (shapes/dtypes only, no data)."""
     if n_embd is None:
         n_embd = args.n_embd
-    config = GPTConfig(
-        sequence_len=args.max_seq_len, vocab_size=vocab_size,
-        n_layer=depth, n_embd=n_embd,
+    layer_types = [
+        "full_attention" if (layer_idx + 1) % 4 == 0 else "linear_attention"
+        for layer_idx in range(depth)
+    ]
+    config = Qwen3_5Config(
+        sequence_len=args.max_seq_len,
+        vocab_size=vocab_size,
+        n_layer=depth,
+        n_embd=n_embd,
+        hidden_dim=(7 * n_embd) // 2,
+        head_dim=n_embd // 4,
+        linear_key_head_dim=n_embd // 8,
+        linear_value_head_dim=n_embd // 8,
         mtp_steps=args.mtp_steps,
+        layer_types=layer_types,
     )
     with torch.device("meta"):
-        model_meta = GPT(config)
+        model_meta = Qwen3_5Model(config)
     return model_meta
 
 # Build the model, move to device, init the weights
@@ -463,12 +473,13 @@ while True:
             "My favorite color is",
             "If 5*x + 3 = 13, then x is",
         ]
-        engine = Engine(orig_model, tokenizer) # use orig_model to avoid recompilation
         for prompt in prompts:
             tokens = tokenizer(prompt, prepend="<|bos|>")
+            generated = tokens.copy()
             with disable_fp8(orig_model):
-                sample, _ = engine.generate_batch(tokens, num_samples=1, max_tokens=16, temperature=0)
-            print0(tokenizer.decode(sample[0]))
+                for token in orig_model.generate(tokens, max_tokens=16, temperature=0):
+                    generated.append(token)
+            print0(tokenizer.decode(generated))
         model.train()
 
     # save checkpoint: at the end of the run, or every save_every steps, except at the first step or the resume step
@@ -498,6 +509,7 @@ while True:
 
     # termination conditions (TODO: possibly also add loss explosions etc.)
     if last_step:
+        print0(f"step {step:05d}/{num_iterations:05d} (100.00%) | completed")
         break
 
     # -------------------------------------------------------------------------

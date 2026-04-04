@@ -388,11 +388,7 @@ class RustBPETokenizer:
 # etude-specific convenience functions
 
 def get_tokenizer():
-    from etude.common import get_base_dir
-    base_dir = get_base_dir()
-    tokenizer_dir = os.path.join(base_dir, "tokenizer")
-    # return HuggingFaceTokenizer.from_directory(tokenizer_dir)
-    return RustBPETokenizer.from_directory(tokenizer_dir)
+    return HuggingFaceTokenizer.from_pretrained("Qwen/Qwen3.5-0.8B")
 
 def get_token_bytes(device="cpu", vocab_size=None):
     """Load token_bytes tensor, optionally padding to match model vocab_size."""
@@ -401,9 +397,19 @@ def get_token_bytes(device="cpu", vocab_size=None):
     base_dir = get_base_dir()
     tokenizer_dir = os.path.join(base_dir, "tokenizer")
     token_bytes_path = os.path.join(tokenizer_dir, "token_bytes.pt")
-    assert os.path.exists(token_bytes_path), f"Token bytes not found at {token_bytes_path}? It gets written by tok_train.py"
-    with open(token_bytes_path, "rb") as f:
-        token_bytes = torch.load(f, map_location=device)
+    if os.path.exists(token_bytes_path):
+        with open(token_bytes_path, "rb") as f:
+            token_bytes = torch.load(f, map_location=device)
+    else:
+        tokenizer = get_tokenizer()
+        special_tokens = set(tokenizer.get_special_tokens())
+        token_bytes = torch.zeros(tokenizer.get_vocab_size(), dtype=torch.int64, device=device)
+        for token_id in range(tokenizer.get_vocab_size()):
+            token = tokenizer.id_to_token(token_id)
+            if token in special_tokens:
+                continue
+            token_str = tokenizer.decode([token_id])
+            token_bytes[token_id] = len(token_str.encode("utf-8"))
     # Pad with zeros if model vocab_size is larger (e.g. due to embedding padding)
     if vocab_size is not None and token_bytes.size(0) < vocab_size:
         pad = torch.zeros(vocab_size - token_bytes.size(0), dtype=token_bytes.dtype, device=device)
