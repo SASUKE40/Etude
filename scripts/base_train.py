@@ -18,6 +18,7 @@ import json
 import time
 import math
 import argparse
+import hashlib
 from dataclasses import asdict
 from contextlib import contextmanager
 
@@ -95,9 +96,36 @@ else:
     gpu_peak_flops = float('inf')  # MFU not meaningful for CPU/MPS
 print0(f"COMPUTE_DTYPE: {COMPUTE_DTYPE} ({COMPUTE_DTYPE_REASON})")
 
+# Checkpoint/resume paths
+base_dir = get_base_dir()
+output_dirname = args.model_tag if args.model_tag else f"d{args.depth}" # e.g. d12
+checkpoint_dir = os.path.join(base_dir, "base_checkpoints", output_dirname)
+resuming = args.resume_from_step != -1
+resume_checkpoint_dir = args.resume_from_dir if args.resume_from_dir else checkpoint_dir
+# When resuming from a different directory (stage transition), only load model weights, not optimizer
+stage_transition = args.resume_from_dir is not None and args.resume_from_dir != checkpoint_dir
+
 # wandb logging init
 use_dummy_wandb = args.run == "dummy" or not master_process
-wandb_run = DummyWandb() if use_dummy_wandb else wandb.init(project="etude", name=args.run, config=user_config)
+wandb_run_id = None
+if resuming and not stage_transition:
+    resume_meta_path = os.path.join(resume_checkpoint_dir, f"meta_{args.resume_from_step:06d}.json")
+    if os.path.exists(resume_meta_path):
+        with open(resume_meta_path, "r", encoding="utf-8") as f:
+            resume_meta = json.load(f)
+        wandb_run_id = resume_meta.get("wandb_run_id")
+    if wandb_run_id is None:
+        # Deterministic fallback for older checkpoints that predate wandb_run_id metadata.
+        wandb_run_id = hashlib.sha1(f"{checkpoint_dir}:{args.run}".encode("utf-8")).hexdigest()[:16]
+
+if use_dummy_wandb:
+    wandb_run = DummyWandb()
+else:
+    wandb_kwargs = dict(project="etude", name=args.run, config=user_config)
+    if wandb_run_id is not None:
+        wandb_kwargs.update(id=wandb_run_id, resume="must")
+        print0(f"Resuming W&B run id: {wandb_run_id}")
+    wandb_run = wandb.init(**wandb_kwargs)
 
 # Flash Attention status
 from etude.flash_attention import USE_FA4
@@ -156,13 +184,6 @@ model.to_empty(device=device) # 2) All tensors get storage on target device but 
 model.init_weights() # 3) All tensors get initialized
 
 # If we are resuming, overwrite the model parameters with those of the checkpoint
-base_dir = get_base_dir()
-output_dirname = args.model_tag if args.model_tag else f"d{args.depth}" # e.g. d12
-checkpoint_dir = os.path.join(base_dir, "base_checkpoints", output_dirname)
-resuming = args.resume_from_step != -1
-resume_checkpoint_dir = args.resume_from_dir if args.resume_from_dir else checkpoint_dir
-# When resuming from a different directory (stage transition), only load model weights, not optimizer
-stage_transition = args.resume_from_dir is not None and args.resume_from_dir != checkpoint_dir
 if resuming:
     print0(f"Resuming from step {args.resume_from_step} (dir: {resume_checkpoint_dir})")
     if stage_transition:
@@ -494,6 +515,7 @@ while True:
                 "step": step,
                 "val_bpb": val_bpb, # loss at last step
                 "model_config": model_config_kwargs,
+                "wandb_run_id": getattr(wandb_run, "id", None),
                 "user_config": user_config, # inputs to the training script
                 "device_batch_size": args.device_batch_size,
                 "max_seq_len": args.max_seq_len,
