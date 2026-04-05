@@ -24,6 +24,7 @@ exist yet, it waits for that file.
 If sbatch_script is omitted, the script will infer one for known log prefixes:
   runs/d24-h100-<jobid>.log -> runs/d24_h100_resume.slurm
   runs/d24-h200-<jobid>.log -> runs/d24_h200_resume.slurm
+  runs/d24-rust-<jobid>.log -> runs/d24_rust_resume.slurm
 
 Environment:
   POLL_SECONDS   Poll interval while waiting for new log content. Default: 15
@@ -42,7 +43,7 @@ normalize_log_prefix() {
     fi
 
     case "$prefix" in
-        d24-h100|d24-h200)
+        d24-h100|d24-h200|d24-rust)
             ;;
         *)
             echo "ERROR: Could not infer a log file from '$input'." >&2
@@ -82,6 +83,7 @@ infer_sbatch_script() {
     case "$prefix" in
         d24-h100) echo "runs/d24_h100_resume.slurm" ;;
         d24-h200) echo "runs/d24_h200_resume.slurm" ;;
+        d24-rust) echo "runs/d24_rust_resume.slurm" ;;
         *)
             echo "ERROR: Could not infer sbatch script from '$input'." >&2
             echo "Pass the sbatch script explicitly." >&2

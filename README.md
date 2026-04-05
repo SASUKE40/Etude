@@ -143,6 +143,12 @@ Override these at submit time if needed, for example:
 RESUME_STEP=12000 MODEL_TAG=d24-rust-s2-v2 sbatch runs/d24_rust_resume.slurm
 ```
 
+To auto-resubmit the Rust Slurm chain when jobs hit the time limit, use:
+
+```bash
+bash runs/watch_slurm_time_limit.sh d24-rust
+```
+
 #### 5. Chat with the Model
 
 ```bash
