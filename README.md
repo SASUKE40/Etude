@@ -125,6 +125,24 @@ torchrun --standalone --nproc_per_node=8 -m scripts.base_train -- \
     --resume-from-dir="$ETUDE_BASE_DIR/base_checkpoints/twostage-s1"
 ```
 
+For a single-H100 Slurm stage transition from an existing base checkpoint to the Rust dataset, use:
+
+```bash
+sbatch runs/d24_rust_resume.slurm
+```
+
+That launcher defaults to:
+
+- source tag: `d24-h100`
+- source step: `10200`
+- output tag: `d24-rust-s2`
+
+Override these at submit time if needed, for example:
+
+```bash
+RESUME_STEP=12000 MODEL_TAG=d24-rust-s2-v2 sbatch runs/d24_rust_resume.slurm
+```
+
 #### 5. Chat with the Model
 
 ```bash
