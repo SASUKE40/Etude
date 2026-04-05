@@ -259,6 +259,22 @@ Run the same resume flow as a Slurm batch job with:
 sbatch runs/d24_h100_resume.slurm
 ```
 
+The Slurm resume launcher is tuned a bit more aggressively than the simple one-off `torchrun` example above. Its current defaults are:
+
+- `DEVICE_BATCH_SIZE=4` with `MAX_SEQ_LEN=1024` and `TOTAL_BATCH_SIZE=32768` (`grad_accum=8`)
+- `LOG_EVERY=10`
+- `SAVE_EVERY=200`
+- `EVAL_EVERY=1000`
+- `EVAL_TOKENS=4194304`
+- `CORE_METRIC_EVERY=-1`
+- `SAMPLE_EVERY=-1`
+
+All of these can be overridden at submit time with environment variables, for example:
+
+```bash
+DEVICE_BATCH_SIZE=8 EVAL_EVERY=-1 sbatch runs/d24_h100_resume.slurm
+```
+
 To automatically resubmit when Slurm kills the job for hitting the time limit, run a watcher against the batch log:
 
 ```bash
