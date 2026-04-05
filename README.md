@@ -134,8 +134,8 @@ sbatch runs/d24_rust_resume.slurm
 That launcher defaults to:
 
 - source tag: `d24-h100`
-- source step: `10200`
-- output tag: `d24-rust-s2`
+- source step: latest complete checkpoint in the source checkpoint directory
+- output tag: `<source-tag>-rust-s2-<step>` so stage-2 saves into a fresh folder by default
 
 Override these at submit time if needed, for example:
 

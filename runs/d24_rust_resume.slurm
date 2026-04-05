@@ -3,8 +3,8 @@
 #
 # Defaults:
 #   source tag: d24-h100
-#   source step: 10200
-#   output tag: d24-rust-s2
+#   source step: latest complete checkpoint in source dir
+#   output tag: <source-tag>-rust-s2-<step>
 #
 # Example:
 #   sbatch runs/d24_rust_resume.slurm
@@ -35,9 +35,9 @@ mkdir -p "$ETUDE_BASE_DIR" "$HF_HOME"
 source .venv/bin/activate
 
 SOURCE_MODEL_TAG="${SOURCE_MODEL_TAG:-d24-h100}"
-MODEL_TAG="${MODEL_TAG:-d24-rust-s2}"
-RUN_NAME="${RUN_NAME:-d24-rust-s2}"
-RESUME_STEP="${RESUME_STEP:-10200}"
+MODEL_TAG="${MODEL_TAG:-}"
+RUN_NAME="${RUN_NAME:-}"
+RESUME_STEP="${RESUME_STEP:-}"
 
 SAVE_EVERY="${SAVE_EVERY:-100}"
 LOG_EVERY="${LOG_EVERY:-10}"
@@ -51,7 +51,28 @@ CORE_METRIC_EVERY="${CORE_METRIC_EVERY:--1}"
 SAMPLE_EVERY="${SAMPLE_EVERY:--1}"
 
 SOURCE_CHECKPOINT_DIR="${SOURCE_CHECKPOINT_DIR:-$ETUDE_BASE_DIR/base_checkpoints/$SOURCE_MODEL_TAG}"
+if [ -z "${RESUME_STEP}" ]; then
+    RESUME_STEP=$(
+        find "$SOURCE_CHECKPOINT_DIR" -maxdepth 1 -name 'model_*.pt' -print | \
+        sed -E 's#^.*/model_([0-9]+)\.pt$#\1#' | \
+        sort -n | \
+        while read -r step; do
+            if [ -f "$SOURCE_CHECKPOINT_DIR/meta_${step}.json" ]; then
+                echo "$step"
+            fi
+        done | \
+        tail -1
+    )
+fi
+
+if [ -z "${RESUME_STEP}" ]; then
+    echo "ERROR: No complete source checkpoint found in $SOURCE_CHECKPOINT_DIR"
+    exit 1
+fi
+
 STEP_PADDED=$(printf "%06d" "$RESUME_STEP")
+MODEL_TAG="${MODEL_TAG:-${SOURCE_MODEL_TAG}-rust-s2-${STEP_PADDED}}"
+RUN_NAME="${RUN_NAME:-${MODEL_TAG}}"
 
 MODEL_PATH="$SOURCE_CHECKPOINT_DIR/model_${STEP_PADDED}.pt"
 META_PATH="$SOURCE_CHECKPOINT_DIR/meta_${STEP_PADDED}.json"
