@@ -510,6 +510,7 @@ while True:
     # use the original uncompiled model because the inputs keep changing shape
     if args.sample_every > 0 and master_process and (last_step or (step > 0 and step % args.sample_every == 0)):
         model.eval()
+        bos_token_id = tokenizer.get_bos_token_id()
         prompts = [
             "The capital of France is",
             "The chemical symbol of gold is",
@@ -520,7 +521,7 @@ while True:
             "If 5*x + 3 = 13, then x is",
         ]
         for prompt in prompts:
-            tokens = tokenizer(prompt, prepend="<|bos|>")
+            tokens = tokenizer(prompt, prepend=bos_token_id)
             generated = tokens.copy()
             with disable_fp8(orig_model):
                 for token in orig_model.generate(tokens, max_tokens=16, temperature=0):
