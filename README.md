@@ -133,9 +133,10 @@ sbatch runs/d24_rust_resume.slurm
 
 That launcher defaults to:
 
-- source tag: `d24-h100`
+- source checkpoint dir: `/scratch/zhu.shili/etude/base_checkpoints/d24-h100-rust-s2-010200`
+- source tag: basename of the source checkpoint directory
 - source step: latest complete checkpoint in the source checkpoint directory
-- output tag: `<source-tag>-rust-s2-<step>` so stage-2 saves into a fresh folder by default
+- output tag: same as the source tag, so it resumes that Rust run in place by default
 
 Override these at submit time if needed, for example:
 
