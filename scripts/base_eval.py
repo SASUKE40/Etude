@@ -89,13 +89,46 @@ def get_hf_token_bytes(tokenizer, device="cpu"):
 # -----------------------------------------------------------------------------
 # CORE evaluation
 
-EVAL_BUNDLE_URL = ""  # TODO: host eval_bundle.zip and update URL
+DEFAULT_EVAL_BUNDLE_URL = ""  # TODO: host eval_bundle.zip and update URL
+
+
+def get_eval_bundle_dir():
+    """Return the local path where the CORE evaluation bundle should live."""
+    return os.path.join(get_base_dir(), "eval_bundle")
+
+
+def get_eval_bundle_url():
+    """
+    Resolve the optional URL for downloading the CORE evaluation bundle.
+
+    Environment variables are preferred so training/eval jobs can be configured
+    without editing the repository in-place.
+    """
+    return (
+        os.environ.get("ETUDE_EVAL_BUNDLE_URL")
+        or os.environ.get("EVAL_BUNDLE_URL")
+        or DEFAULT_EVAL_BUNDLE_URL
+    )
+
+
+def get_core_eval_status():
+    """
+    Report whether CORE evaluation can run with the current configuration.
+
+    Returns a tuple of:
+      - ready: whether CORE evaluation can proceed immediately or via download
+      - eval_bundle_dir: local bundle directory
+      - eval_bundle_url: configured download URL, if any
+    """
+    eval_bundle_dir = get_eval_bundle_dir()
+    eval_bundle_url = get_eval_bundle_url()
+    ready = os.path.exists(eval_bundle_dir) or bool(eval_bundle_url)
+    return ready, eval_bundle_dir, eval_bundle_url
 
 
 def place_eval_bundle(file_path):
     """Unzip eval_bundle.zip and place it in the base directory."""
-    base_dir = get_base_dir()
-    eval_bundle_dir = os.path.join(base_dir, "eval_bundle")
+    eval_bundle_dir = get_eval_bundle_dir()
     with tempfile.TemporaryDirectory() as tmpdir:
         with zipfile.ZipFile(file_path, 'r') as zip_ref:
             zip_ref.extractall(tmpdir)
@@ -109,16 +142,15 @@ def evaluate_core(model, tokenizer, device, max_per_task=-1):
     Evaluate a base model on the CORE benchmark.
     Returns dict with results, centered_results, and core_metric.
     """
-    base_dir = get_base_dir()
-    eval_bundle_dir = os.path.join(base_dir, "eval_bundle")
+    ready, eval_bundle_dir, eval_bundle_url = get_core_eval_status()
     # Download the eval bundle if needed
     if not os.path.exists(eval_bundle_dir):
-        if not EVAL_BUNDLE_URL:
+        if not ready:
             raise RuntimeError(
-                "CORE evaluation bundle is not configured. Set EVAL_BUNDLE_URL in "
-                "scripts/base_eval.py or place eval_bundle/ under ETUDE_BASE_DIR."
+                "CORE evaluation bundle is not configured. Set ETUDE_EVAL_BUNDLE_URL "
+                "(or EVAL_BUNDLE_URL), or place eval_bundle/ under ETUDE_BASE_DIR."
             )
-        download_file_with_lock(EVAL_BUNDLE_URL, "eval_bundle.zip", postprocess_fn=place_eval_bundle)
+        download_file_with_lock(eval_bundle_url, "eval_bundle.zip", postprocess_fn=place_eval_bundle)
 
     config_path = os.path.join(eval_bundle_dir, "core.yaml")
     data_base_path = os.path.join(eval_bundle_dir, "eval_data")

@@ -33,7 +33,7 @@ from etude.tokenizer import get_tokenizer, get_token_bytes
 from etude.checkpoint_manager import save_checkpoint, load_checkpoint
 from etude.loss_eval import evaluate_bpb
 from etude.flash_attention import HAS_FA4
-from scripts.base_eval import evaluate_core
+from scripts.base_eval import evaluate_core, get_core_eval_status
 print_banner()
 
 # -----------------------------------------------------------------------------
@@ -104,6 +104,16 @@ resuming = args.resume_from_step != -1
 resume_checkpoint_dir = args.resume_from_dir if args.resume_from_dir else checkpoint_dir
 # When resuming from a different directory (stage transition), only load model weights, not optimizer
 stage_transition = args.resume_from_dir is not None and args.resume_from_dir != checkpoint_dir
+core_metric_enabled = args.core_metric_every > 0
+if core_metric_enabled:
+    core_eval_ready, _, _ = get_core_eval_status()
+    if not core_eval_ready:
+        print0(
+            "WARNING: CORE evaluation requested but the evaluation bundle is unavailable. "
+            "Skipping CORE metric during training. Set ETUDE_EVAL_BUNDLE_URL "
+            "(or EVAL_BUNDLE_URL), or place eval_bundle/ under ETUDE_BASE_DIR to enable it."
+        )
+        core_metric_enabled = False
 
 # wandb logging init
 use_dummy_wandb = args.run == "dummy" or not master_process
@@ -483,7 +493,7 @@ while True:
     # use the original uncompiled model because the inputs keep changing shape
     # disable FP8 for evaluation to use BF16 for more consistent/accurate results
     results = {}
-    if args.core_metric_every > 0 and (last_step or (step > 0 and step % args.core_metric_every == 0)):
+    if core_metric_enabled and (last_step or (step > 0 and step % args.core_metric_every == 0)):
         model.eval()
         with disable_fp8(orig_model):
             results = evaluate_core(orig_model, tokenizer, device, max_per_task=args.core_metric_max_per_task)
