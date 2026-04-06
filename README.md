@@ -209,6 +209,12 @@ If you want to inspect the Rust-specialized base checkpoint before chat SFT, use
 python -m scripts.chat_cli -i base -g twostage-s2
 ```
 
+For the D24 H100 Rust stage-2 base checkpoint:
+
+```bash
+python -m scripts.chat_cli -i base -g d24-h100-rust-s2-010200 --device-type cuda --max-tokens 2048
+```
+
 To chat with a specific chat-SFT checkpoint saved under `chatsft_checkpoints`, point
 `ETUDE_BASE_DIR` at the directory root, then pass the checkpoint directory name as the
 model tag and the checkpoint suffix as the step. For example, for:
