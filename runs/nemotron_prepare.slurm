@@ -8,12 +8,12 @@
 #   MAX_ROWS_PER_SUBSET=1000 SUBSETS=general,instruction-following,tool_calling sbatch runs/nemotron_prepare.slurm
 
 #SBATCH --job-name=nemotron-prep
-#SBATCH --partition=gpu-interactive
+#SBATCH --partition=sharing
 #SBATCH --nodes=1
-#SBATCH --gres=gpu:h200:1
+#SBATCH --gres=gpu:h100:1
 #SBATCH --ntasks=1
-#SBATCH --mem=141GB
-#SBATCH --time=2:00:00
+#SBATCH --mem=80GB
+#SBATCH --time=1:00:00
 #SBATCH --output=runs/nemotron-prepare-%j.log
 
 set -euo pipefail
