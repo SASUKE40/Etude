@@ -5,13 +5,13 @@ It is a narrative derived from commit history, not a ground-truth experiment tra
 
 ## Scope
 
-- Period covered: March 24, 2026 to April 4, 2026
+- Period covered: March 24, 2026 to April 5, 2026
 - Source: `git log` commit subjects
-- Goal: show what was tried, in order, across data prep, model/training stability, and H100/H200 execution workflows
+- Goal: show what was tried, in order, across data prep, model/training stability, H100/H200 execution workflows, and the later chat-SFT path
 
 ## High-Level Arc
 
-The training trail moved through six clear phases:
+The training trail moved through eight clear phases:
 
 1. Stand up the repo and cluster workflow.
 2. Make dataset preparation actually work at cluster scale.
@@ -19,6 +19,8 @@ The training trail moved through six clear phases:
 4. Stabilize the training stack around Flash Attention, dtype issues, and single-GPU execution.
 5. Switch the base stack to Qwen 3.5 and build smoke/full-train flows.
 6. Turn H100/H200 training into a resumable Slurm workflow with W&B continuity and time-limit recovery.
+7. Extend the resume/recovery tooling to the Rust stage-transition path.
+8. Add a Nemotron-based chat-SFT pipeline and harden it against real cluster failures.
 
 ## Storyline
 
@@ -218,6 +220,41 @@ Evidence:
 - `452e23b` Tune H100 resume training defaults
 - `408735c` Document H100 resume launcher defaults
 
+### Phase 8: Rust resume path and Nemotron chat-SFT become first-class
+
+What was tried:
+
+- Added a Rust stage-transition resume script and taught the Slurm watcher how to follow Rust runs too.
+- Added a full Nemotron Cascade SFT Stage 2 preparation pipeline and a dedicated chat-SFT launcher.
+- Repeatedly hardened Nemotron prep for real cluster usage: environment dependencies, import path issues, OOM reductions, compute-node launchers, H100 defaults, and narrower default subset selection.
+- Shifted the default prep target toward the `instruction-following` subset, which suggests the chat-SFT path was narrowed from “all available chat data” to “the most directly useful subset.”
+- Fixed multiple compatibility bugs uncovered only after the first real SFT launches: HuggingFace chat rendering, stale `token_bytes` cache mismatches, overlong conversation packing, and the fact that long jobs need periodic SFT checkpoints rather than end-of-run-only saves.
+
+What this says about the trail:
+
+- The project expanded from base-model pretrain and Rust specialization into a real chat fine-tuning branch.
+- This phase reads like a live operational bring-up: create the new path, hit the actual cluster/runtime failures, then fix them one by one until the job can survive long enough to be useful.
+- The final commits are especially telling: once SFT moved onto shared H100 time, periodic checkpointing and row-cap-aware packing became mandatory, not optional cleanup.
+
+Evidence:
+
+- `838d1e4` Add Rust stage-transition resume script
+- `eb1cc1f` Auto-detect latest Rust stage-transition source step
+- `ff8fd73` Add Rust support to Slurm time-limit watcher
+- `a8de8e8` Default Rust resume launcher to checkpoint dir
+- `92b909f` Add Nemotron chat SFT pipeline and Slurm job
+- `d119e7c` Fix Nemotron prepare environment dependencies
+- `fb98bea` Fix Nemotron prepare import path
+- `b5ad25c` Reduce Nemotron prepare memory usage
+- `ed553f1` Add Slurm launcher for Nemotron dataset prep
+- `9c9c653` Switch Nemotron prep Slurm job to H100
+- `8a60867` Default Nemotron prep to instruction-following and code
+- `22b9b0b` Update chat SFT default checkpoint to step 8800
+- `4d7324a` Harden Nemotron prep and default to instruction-following
+- `e5ce18d` Add chat rendering to HuggingFace tokenizer
+- `801a913` Refresh token byte cache for chat SFT
+- `6f21095` Add periodic chat SFT checkpoints
+
 ## What You Have Tried, Condensed
 
 If this needs to read like a short retrospective, the training trail looks like this:
@@ -230,6 +267,8 @@ If this needs to read like a short retrospective, the training trail looks like 
 - Tried to make single-H100 training practical with better docs, examples, and Slurm launch scripts.
 - Tried a model-stack pivot to Qwen 3.5 and then built smoke/full-train validation flows around it.
 - Tried to make interrupted training survivable by adding W&B resume continuity, resume sbatch jobs, log watchers, auto-resubmission, and faster resume defaults.
+- Tried to extend those resume semantics to the Rust stage-transition path instead of treating that phase as a one-off manual handoff.
+- Tried to stand up a Nemotron-based chat-SFT branch, then hardened it through the exact failures that surfaced on cluster: dependency gaps, import-path issues, prep OOMs, tokenizer/rendering mismatches, stale cache mismatches, row-packing bugs, and missing periodic checkpoints.
 
 ## Raw Chronological Commit Trail
 
@@ -286,4 +325,21 @@ e8aebcf  2026-04-04  log every resumed step to wandb
 f4b64c0  2026-04-04  Fix BOS token handling in sampling
 452e23b  2026-04-04  Tune H100 resume training defaults
 408735c  2026-04-04  Document H100 resume launcher defaults
+2b81189  2026-04-04  Add training storyline from commit history
+838d1e4  2026-04-05  Add Rust stage-transition resume script
+eb1cc1f  2026-04-05  Auto-detect latest Rust stage-transition source step
+ff8fd73  2026-04-05  Add Rust support to Slurm time-limit watcher
+a8de8e8  2026-04-05  Default Rust resume launcher to checkpoint dir
+92b909f  2026-04-05  Add Nemotron chat SFT pipeline and Slurm job
+d119e7c  2026-04-05  Fix Nemotron prepare environment dependencies
+fb98bea  2026-04-05  Fix Nemotron prepare import path
+b5ad25c  2026-04-05  Reduce Nemotron prepare memory usage
+ed553f1  2026-04-05  Add Slurm launcher for Nemotron dataset prep
+9c9c653  2026-04-05  Switch Nemotron prep Slurm job to H100
+8a60867  2026-04-05  Default Nemotron prep to instruction-following and code
+22b9b0b  2026-04-05  Update chat SFT default checkpoint to step 8800
+4d7324a  2026-04-05  Harden Nemotron prep and default to instruction-following
+e5ce18d  2026-04-05  Add chat rendering to HuggingFace tokenizer
+801a913  2026-04-05  Refresh token byte cache for chat SFT
+6f21095  2026-04-05  Add periodic chat SFT checkpoints
 ```
