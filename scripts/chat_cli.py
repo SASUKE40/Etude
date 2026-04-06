@@ -17,8 +17,11 @@ parser.add_argument('-s', '--step', type=int, default=None, help='Step to load')
 parser.add_argument('-p', '--prompt', type=str, default='', help='Prompt the model, get a single response back')
 parser.add_argument('-t', '--temperature', type=float, default=0.6, help='Temperature for generation')
 parser.add_argument('-k', '--top-k', type=int, default=50, help='Top-k sampling parameter')
+parser.add_argument('-m', '--max-tokens', type=int, default=1024, help='Max tokens for generation')
 parser.add_argument('--device-type', type=str, default='', choices=['cuda', 'cpu', 'mps'], help='Device type for evaluation: cuda|cpu|mps. empty => autodetect')
 args = parser.parse_args()
+if args.max_tokens < 1:
+    parser.error("--max-tokens must be at least 1")
 
 # Init the model and tokenizer
 
@@ -53,7 +56,7 @@ conversation_tokens = [bos]
 conversation_messages = []
 
 
-def generate_qwen_reply(model, tokenizer, conversation_messages, user_input, temperature, top_k):
+def generate_qwen_reply(model, tokenizer, conversation_messages, user_input, temperature, top_k, max_tokens):
     ids = [bos]
     for message in conversation_messages:
         ids.append(im_start)
@@ -71,7 +74,7 @@ def generate_qwen_reply(model, tokenizer, conversation_messages, user_input, tem
     print("\nAssistant: ", end="", flush=True)
     stop_tokens = {token for token in [im_end, eos, bos] if token is not None}
     printed_text = ""
-    for token in model.generate(ids, max_tokens=256, temperature=temperature, top_k=top_k):
+    for token in model.generate(ids, max_tokens=max_tokens, temperature=temperature, top_k=top_k):
         if token in stop_tokens:
             break
         response_tokens.append(token)
@@ -117,7 +120,7 @@ while True:
         conversation_tokens.append(assistant_start)
         generate_kwargs = {
             "num_samples": 1,
-            "max_tokens": 256,
+            "max_tokens": args.max_tokens,
             "temperature": args.temperature,
             "top_k": args.top_k,
         }
@@ -132,7 +135,15 @@ while True:
             response_tokens.append(assistant_end)
         conversation_tokens.extend(response_tokens)
     elif use_qwen_chat:
-        reply = generate_qwen_reply(model, tokenizer, conversation_messages, user_input, args.temperature, args.top_k)
+        reply = generate_qwen_reply(
+            model,
+            tokenizer,
+            conversation_messages,
+            user_input,
+            args.temperature,
+            args.top_k,
+            args.max_tokens,
+        )
         conversation_messages.append({"role": "user", "content": user_input})
         conversation_messages.append({"role": "assistant", "content": reply})
     else:
