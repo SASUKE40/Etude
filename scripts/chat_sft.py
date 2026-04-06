@@ -11,6 +11,7 @@ torchrun --standalone --nproc_per_node=8 -m scripts.chat_sft -- --device-batch-s
 
 import gc
 import argparse
+import hashlib
 import os
 os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 import time
@@ -18,8 +19,9 @@ from dataclasses import asdict
 import wandb
 import torch
 from etude.common import compute_init, compute_cleanup, print0, DummyWandb, get_base_dir, autodetect_device_type, get_peak_flops, COMPUTE_DTYPE, COMPUTE_DTYPE_REASON, is_ddp_initialized
+from etude.sft_dataloader import PackedConversationDataLoader
 from etude.tokenizer import get_token_bytes
-from etude.checkpoint_manager import save_checkpoint, load_model, load_optimizer_state
+from etude.checkpoint_manager import save_checkpoint, load_model, load_optimizer_state, build_model, load_checkpoint
 from etude.loss_eval import evaluate_bpb
 import torch.distributed as dist
 from etude.flash_attention import HAS_FA4
@@ -48,10 +50,13 @@ parser.add_argument("--device-type", type=str, default="", help="cuda|cpu|mps (e
 # Model loading
 parser.add_argument("--model-tag", type=str, default=None, help="model tag to load from")
 parser.add_argument("--model-step", type=int, default=None, help="model step to load from")
+parser.add_argument("--output-model-tag", type=str, default=None, help="checkpoint directory name for SFT outputs (default: model-tag)")
+parser.add_argument("--source-checkpoint-dir", type=str, default=None, help="explicit source checkpoint directory for fresh SFT starts")
 parser.add_argument("--load-optimizer", type=int, default=1, help="warm-start optimizer from pretrained checkpoint (0=no, 1=yes)")
 # Training horizon
 parser.add_argument("--num-iterations", type=int, default=-1, help="number of optimization steps (-1 = full epoch)")
 parser.add_argument("--save-every", type=int, default=-1, help="save checkpoints every N steps (-1 = only at end)")
+parser.add_argument("--resume-from-step", type=int, default=-1, help="resume SFT from this step (-1 = disable)")
 # Batch sizes (default: inherit from pretrained checkpoint)
 parser.add_argument("--max-seq-len", type=int, default=None, help="max context length (default: inherit from pretrain)")
 parser.add_argument("--device-batch-size", type=int, default=None, help="per-device batch size (default: inherit from pretrain)")
@@ -110,16 +115,48 @@ if device_type == "cuda":
 else:
     gpu_peak_flops = float('inf')  # MFU not meaningful for CPU/MPS
 
-# wandb logging init
-use_dummy_wandb = args.run == "dummy" or not master_process
-wandb_run = DummyWandb() if use_dummy_wandb else wandb.init(project="etude-sft", name=args.run, config=user_config)
+# Checkpoint paths and mode
+base_dir = get_base_dir()
+resuming = args.resume_from_step != -1
+output_model_tag = args.output_model_tag or args.model_tag
+if resuming and output_model_tag is None:
+    raise ValueError("--resume-from-step requires --output-model-tag or --model-tag")
+
+# Load the model and tokenizer
+if resuming:
+    model, tokenizer, meta = load_model(
+        "sft",
+        device,
+        phase="train",
+        model_tag=output_model_tag,
+        step=args.resume_from_step,
+    )
+    checkpoint_source = "sft"
+    checkpoint_step = args.resume_from_step
+else:
+    checkpoint_step = args.model_step
+    if args.source_checkpoint_dir is not None:
+        if checkpoint_step is None:
+            raise ValueError("--source-checkpoint-dir requires --model-step")
+        model, tokenizer, meta = build_model(
+            args.source_checkpoint_dir,
+            checkpoint_step,
+            device,
+            phase="train",
+        )
+    else:
+        model, tokenizer, meta = load_model(
+            "base",
+            device,
+            phase="train",
+            model_tag=args.model_tag,
+            step=checkpoint_step,
+        )
+    checkpoint_source = "base"
 
 # Flash Attention status
 if not HAS_FA4:
     print0("WARNING: Flash Attention 4 not available, using PyTorch SDPA fallback. Training will be less efficient.")
-
-# Load the model and tokenizer
-model, tokenizer, meta = load_model("base", device, phase="train", model_tag=args.model_tag, step=args.model_step)
 
 # Inherit training hyperparameters from pretrained checkpoint (None = inherit, explicit value = override)
 pretrain_user_config = meta.get("user_config", {})
@@ -141,9 +178,41 @@ for name, fallback, source in [
     else:
         print0(f"Using {name}={arg_val}")
 
+# wandb logging init
+use_dummy_wandb = args.run == "dummy" or not master_process
+wandb_run_id = None
+wandb_run_id_from_checkpoint = False
+if resuming:
+    wandb_run_id = meta.get("wandb_run_id")
+    wandb_run_id_from_checkpoint = wandb_run_id is not None
+    if wandb_run_id is None:
+        resume_tag = output_model_tag if output_model_tag is not None else "chat-sft"
+        wandb_run_id = hashlib.sha1(f"{resume_tag}:{args.run}".encode("utf-8")).hexdigest()[:16]
+
+if use_dummy_wandb:
+    wandb_run = DummyWandb()
+else:
+    wandb_kwargs = dict(
+        project=os.environ.get("WANDB_PROJECT", "etude-sft"),
+        entity=os.environ.get("WANDB_ENTITY"),
+        name=args.run,
+        config=user_config,
+    )
+    if resuming and wandb_run_id is not None:
+        resume_mode = "must" if wandb_run_id_from_checkpoint else "allow"
+        wandb_kwargs.update(id=wandb_run_id, resume=resume_mode)
+        print0(f"Using W&B run id: {wandb_run_id}")
+    wandb_run = wandb.init(**wandb_kwargs)
+    wandb_run.define_metric("step")
+    wandb_run.define_metric("*", step_metric="step")
+
 orig_model = model
 model = torch.compile(model, dynamic=False)
 depth = model.config.n_layer
+output_dirname = output_model_tag if output_model_tag else f"d{depth}"
+user_config["resolved_output_model_tag"] = output_dirname
+user_config["checkpoint_source"] = checkpoint_source
+user_config["checkpoint_step"] = checkpoint_step
 num_flops_per_token = model.estimate_flops()
 tokens_per_fwdbwd = args.device_batch_size * args.max_seq_len # tokens per iteration for a single rank
 world_tokens_per_fwdbwd = tokens_per_fwdbwd * ddp_world_size # total tokens per iteration for all ranks
@@ -162,13 +231,35 @@ token_bytes = get_token_bytes(
 # Note that pretraining ramps weight_decay to zero by end of pretraining, so SFT continues with zero
 optimizer = model.setup_optimizer(embedding_lr=args.embedding_lr, matrix_lr=args.matrix_lr, weight_decay=0.0)
 
-# Optionally warm-start optimizer from pretrained checkpoint (momentum buffers etc.)
-# Note: load_state_dict overwrites param_group metadata (LRs, betas, etc.) with the
-# pretrained values. Since pretraining warmdown brings LRs to ~0, we must save and
-# restore our fresh SFT LRs after loading.
-base_dir = get_base_dir()
-if args.load_optimizer:
-    optimizer_data = load_optimizer_state("base", device, rank=ddp_rank, model_tag=args.model_tag, step=args.model_step)
+# Restore optimizer state for resume, or optionally warm-start it from the source checkpoint.
+if resuming:
+    optimizer_data = load_optimizer_state("sft", device, rank=ddp_rank, model_tag=output_dirname, step=args.resume_from_step)
+    if optimizer_data is None:
+        raise FileNotFoundError(
+            f"Missing SFT optimizer checkpoint for {output_dirname} step {args.resume_from_step}"
+        )
+    optimizer.load_state_dict(optimizer_data)
+    del optimizer_data
+    for group in optimizer.param_groups:
+        group["initial_lr"] = group.get("initial_lr", group["lr"])
+    print0(f"Loaded optimizer state from SFT checkpoint step {args.resume_from_step}")
+elif args.load_optimizer:
+    if args.source_checkpoint_dir is not None:
+        _, optimizer_data, _ = load_checkpoint(
+            args.source_checkpoint_dir,
+            args.model_step,
+            device,
+            load_optimizer=True,
+            rank=ddp_rank,
+        )
+    else:
+        optimizer_data = load_optimizer_state(
+            "base",
+            device,
+            rank=ddp_rank,
+            model_tag=args.model_tag,
+            step=args.model_step,
+        )
     if optimizer_data is not None:
         base_lrs = [group["lr"] for group in optimizer.param_groups]
         optimizer.load_state_dict(optimizer_data)
@@ -184,10 +275,11 @@ scaler = torch.amp.GradScaler() if COMPUTE_DTYPE == torch.float16 else None
 if scaler is not None:
     print0("GradScaler enabled for fp16 training")
 
-# Override the initial learning rate as a fraction of the base learning rate
-for group in optimizer.param_groups:
-    group["lr"] = group["lr"] * args.init_lr_frac
-    group["initial_lr"] = group["lr"]
+if not resuming:
+    # Override the initial learning rate as a fraction of the base learning rate only for fresh starts.
+    for group in optimizer.param_groups:
+        group["lr"] = group["lr"] * args.init_lr_frac
+        group["initial_lr"] = group["lr"]
 
 def build_legacy_sft_datasets():
     identity_conversations_filepath = os.path.join(base_dir, "identity_conversations.jsonl")
@@ -251,137 +343,56 @@ else:
 user_config["resolved_chat_dataset"] = resolved_chat_dataset
 user_config["resolved_chat_data_dir"] = chat_data_dir
 
-# DataLoader is defined here, it emits inputs, targets : 2D tensors of shape (device_batch_size, max_seq_len)
-# A big problem is that we don't know the final num_iterations in advance. So we create
-# these two global variables and update them from within the data generator.
-last_step = False # we will toggle this to True when we reach the end of the training dataset
-approx_progress = 0.0 # will go from 0 to 1 over the course of the epoch
-current_epoch = 1 # track epoch for logging
-def sft_data_generator_bos_bestfit(split, buffer_size=100):
-    """
-    BOS-aligned dataloader for SFT with bestfit-pad packing.
+if resuming:
+    saved_user_config = meta.get("user_config", {})
+    saved_chat_dataset = saved_user_config.get("resolved_chat_dataset") or saved_user_config.get("chat_dataset")
+    saved_chat_data_dir = saved_user_config.get("resolved_chat_data_dir")
+    saved_chat_subsets = saved_user_config.get("chat_subsets")
+    for name, current_value, saved_value in [
+        ("chat-dataset", resolved_chat_dataset, saved_chat_dataset),
+        ("chat-data-dir", os.path.abspath(chat_data_dir), os.path.abspath(saved_chat_data_dir) if saved_chat_data_dir else None),
+        ("chat-subsets", args.chat_subsets, saved_chat_subsets),
+        ("max-seq-len", args.max_seq_len, meta.get("max_seq_len")),
+        ("device-batch-size", args.device_batch_size, meta.get("device_batch_size")),
+        ("total-batch-size", args.total_batch_size, meta.get("total_batch_size")),
+    ]:
+        if saved_value is not None and current_value != saved_value:
+            raise ValueError(
+                f"SFT resume requires --{name}={saved_value}, but got {current_value}"
+            )
 
-    Each row in the batch starts with BOS (beginning of a conversation).
-    Conversations are packed using best-fit algorithm. When no conversation fits,
-    the row is padded (instead of cropping) to ensure no tokens are ever discarded.
-    Padding positions have targets masked with -1 (ignore_index for cross-entropy).
-    """
-    global last_step, approx_progress, current_epoch
-    assert split in {"train", "val"}, "split must be 'train' or 'val'"
-    dataset = train_dataset if split == "train" else val_dataset
-    dataset_size = len(dataset)
-    assert dataset_size > 0
-    row_capacity = args.max_seq_len + 1  # +1 for target at last position
-    render_max_tokens = row_capacity  # keep each conversation packable into one row
-    bos_token = tokenizer.get_bos_token_id()
+resume_state_dict = meta.get("dataloader_state_dict") if resuming else None
+train_loader = PackedConversationDataLoader(
+    dataset=train_dataset,
+    tokenizer=tokenizer,
+    device_batch_size=args.device_batch_size,
+    max_seq_len=args.max_seq_len,
+    split="train",
+    device=device,
+    device_type=device_type,
+    ddp_rank=ddp_rank,
+    ddp_world_size=ddp_world_size,
+    num_iterations=args.num_iterations,
+    resume_state_dict=resume_state_dict,
+)
 
-    # Conversation buffer: list of (token_ids, loss_mask) tuples
-    conv_buffer = []
-    cursor = ddp_rank  # Each rank processes different conversations (for fetching)
-    consumed = ddp_rank  # Track actual consumption separately from buffering
-    epoch = 1
-    it = 0  # iteration counter
-
-    def refill_buffer():
-        nonlocal cursor, epoch
-        while len(conv_buffer) < buffer_size:
-            conversation = dataset[cursor]
-            ids, mask = tokenizer.render_conversation(conversation, max_tokens=render_max_tokens)
-            conv_buffer.append((ids, mask))
-            cursor += ddp_world_size
-            if cursor >= dataset_size:
-                cursor = cursor % dataset_size
-                epoch += 1
-                # Note: last_step is now triggered based on consumption, not fetching
-
-    while True:
-        rows = []
-        mask_rows = []
-        row_lengths = []  # Track actual content length (excluding padding) for each row
-        for _ in range(args.device_batch_size):
-            row = []
-            mask_row = []
-            padded = False
-            while len(row) < row_capacity:
-                # Ensure buffer has conversations
-                while len(conv_buffer) < buffer_size:
-                    refill_buffer()
-
-                remaining = row_capacity - len(row)
-
-                # Find largest conversation that fits entirely
-                best_idx = -1
-                best_len = 0
-                for i, (conv, _) in enumerate(conv_buffer):
-                    conv_len = len(conv)
-                    if conv_len <= remaining and conv_len > best_len:
-                        best_idx = i
-                        best_len = conv_len
-
-                if best_idx >= 0:
-                    # Found a conversation that fits - use it entirely
-                    conv, conv_mask = conv_buffer.pop(best_idx)
-                    row.extend(conv)
-                    mask_row.extend(conv_mask)
-                    consumed += ddp_world_size  # Track actual consumption
-                else:
-                    # No conversation fits - pad the remainder instead of cropping
-                    # This ensures we never discard any tokens
-                    content_len = len(row)
-                    row.extend([bos_token] * remaining)  # Pad with BOS tokens
-                    mask_row.extend([0] * remaining)
-                    padded = True
-                    break  # Row is now full (with padding)
-
-            # Track content length: full row if no padding, otherwise the length before padding
-            if padded:
-                row_lengths.append(content_len)
-            else:
-                row_lengths.append(row_capacity)
-            rows.append(row[:row_capacity])
-            mask_rows.append(mask_row[:row_capacity])
-
-        # Stopping condition to respect num_iterations, if given
-        it += 1
-        if 0 < args.num_iterations <= it and split == "train":
-            last_step = True
-
-        # Update progress tracking (based on consumed, not cursor, to account for buffering)
-        if split == "train":
-            current_epoch = epoch
-            if args.num_iterations > 0:
-                approx_progress = it / args.num_iterations
-            else:
-                approx_progress = consumed / dataset_size
-            # Trigger last_step when we've consumed enough (instead of when cursor wraps)
-            if consumed >= dataset_size:
-                last_step = True
-
-        # Build tensors
-        use_cuda = device_type == "cuda"
-        batch_tensor = torch.tensor(rows, dtype=torch.long, pin_memory=use_cuda)
-        inputs = batch_tensor[:, :-1].to(device=device, dtype=torch.int32, non_blocking=use_cuda).contiguous()
-        targets = batch_tensor[:, 1:].to(device=device, dtype=torch.int64, non_blocking=use_cuda).contiguous()
-
-        # Apply the loss mask from render_conversation (mask=1 for assistant completions,
-        # mask=0 for user prompts, BOS, special tokens, tool outputs). mask[1:] aligns
-        # with targets (shifted by 1). Unmasked positions get -1 (ignore_index).
-        mask_tensor = torch.tensor(mask_rows, dtype=torch.int8)
-        mask_targets = mask_tensor[:, 1:].to(device=device)
-        targets[mask_targets == 0] = -1
-
-        # Mask out padding positions in targets (set to -1 = ignore_index)
-        # For each row, positions >= (content_length - 1) in targets should be masked
-        for i, content_len in enumerate(row_lengths):
-            if content_len < row_capacity:
-                targets[i, content_len-1:] = -1
-
+def build_val_loader():
+    val_loader = PackedConversationDataLoader(
+        dataset=val_dataset,
+        tokenizer=tokenizer,
+        device_batch_size=args.device_batch_size,
+        max_seq_len=args.max_seq_len,
+        split="val",
+        device=device,
+        device_type=device_type,
+        ddp_rank=ddp_rank,
+        ddp_world_size=ddp_world_size,
+        num_iterations=args.num_iterations,
+    )
+    for inputs, targets, state_dict in val_loader:
         yield inputs, targets
 
-train_loader = sft_data_generator_bos_bestfit("train")
-build_val_loader = lambda: sft_data_generator_bos_bestfit("val")
-progress = 0 # will go from 0 to 1 over the course of the epoch
-output_dirname = args.model_tag if args.model_tag else f"d{depth}" # e.g. d12
+progress = 0.0
 checkpoint_dir = os.path.join(base_dir, "chatsft_checkpoints", output_dirname)
 
 # Learning rate schedule (linear warmup, constant, linear warmdown)
@@ -404,20 +415,27 @@ def get_muon_momentum(it):
 
 # -----------------------------------------------------------------------------
 # Training loop
-x, y = next(train_loader) # prefetch the very first batch of data
-min_val_bpb = float("inf")
+x, y, train_loader_state_dict = next(train_loader) # prefetch the very first batch of data
+resume_loop_state = meta.get("loop_state", {}) if resuming else {}
+progress = float(resume_loop_state.get("progress", train_loader.approx_progress if resuming else 0.0))
+min_val_bpb = float(resume_loop_state.get("min_val_bpb", meta.get("val_bpb", float("inf"))))
 smooth_train_loss = 0 # EMA of training loss
+smooth_train_loss = float(resume_loop_state.get("smooth_train_loss", smooth_train_loss))
 ema_beta = 0.9 # EMA decay factor
 total_training_time = 0 # total wall-clock time of training
-step = 0
+total_training_time = float(resume_loop_state.get("total_training_time", total_training_time))
+step = args.resume_from_step if resuming else 0
+val_bpb = float(meta.get("val_bpb", float("nan")))
 while True:
     flops_so_far = num_flops_per_token * args.total_batch_size * step
 
     # Synchronize last_step across all ranks to avoid hangs in the distributed setting
+    last_step = train_loader.last_step
     if ddp:
         last_step_tensor = torch.tensor(last_step, dtype=torch.int32, device=device)
         dist.all_reduce(last_step_tensor, op=dist.ReduceOp.MAX)
         last_step = bool(last_step_tensor.item())
+        train_loader.last_step = last_step
 
     # once in a while: evaluate the val bpb (all ranks participate)
     if last_step or (args.eval_every > 0 and step % args.eval_every == 0):
@@ -472,7 +490,12 @@ while True:
         model.train()
 
     # save checkpoint at the end of the run, or periodically if requested
-    should_save = last_step or (step > 0 and args.save_every > 0 and step % args.save_every == 0)
+    should_save = last_step or (
+        step > 0
+        and step != args.resume_from_step
+        and args.save_every > 0
+        and step % args.save_every == 0
+    )
     if should_save:
         save_checkpoint(
             checkpoint_dir,
@@ -483,7 +506,18 @@ while True:
                 "step": step,
                 "val_bpb": val_bpb, # loss at last step
                 "model_config": asdict(orig_model.config),
+                "wandb_run_id": getattr(wandb_run, "id", None),
                 "user_config": user_config, # inputs to the training script
+                "device_batch_size": args.device_batch_size,
+                "max_seq_len": args.max_seq_len,
+                "total_batch_size": args.total_batch_size,
+                "dataloader_state_dict": train_loader_state_dict,
+                "loop_state": {
+                    "min_val_bpb": min_val_bpb,
+                    "smooth_train_loss": smooth_train_loss,
+                    "total_training_time": total_training_time,
+                    "progress": progress,
+                },
             },
             rank=ddp_rank,
         )
@@ -504,8 +538,8 @@ while True:
             scaler.scale(loss).backward()
         else:
             loss.backward()
-        x, y = next(train_loader) # prefetch the next batch while the GPU is busy with forward/backward
-        progress = max(progress, approx_progress) # only increase progress monotonically
+        x, y, train_loader_state_dict = next(train_loader) # prefetch the next batch while the GPU is busy with forward/backward
+        progress = max(progress, train_loader.approx_progress) # only increase progress monotonically
     # step the optimizer
     lrm = get_lr_multiplier(progress)
     muon_momentum = get_muon_momentum(step)
@@ -540,7 +574,7 @@ while True:
     mfu = 100 * flops_per_sec / (gpu_peak_flops * ddp_world_size)
     if step > 10:
         total_training_time += dt # only count the time after the first 10 steps
-    print0(f"step {step:05d} ({pct_done:.2f}%) | loss: {debiased_smooth_loss:.6f} | lrm: {lrm:.2f} | dt: {dt * 1000:.2f}ms | tok/sec: {tok_per_sec:,} | mfu: {mfu:.2f} | epoch: {current_epoch} | total time: {total_training_time/60:.2f}m")
+    print0(f"step {step:05d} ({pct_done:.2f}%) | loss: {debiased_smooth_loss:.6f} | lrm: {lrm:.2f} | dt: {dt * 1000:.2f}ms | tok/sec: {tok_per_sec:,} | mfu: {mfu:.2f} | epoch: {train_loader.current_epoch} | total time: {total_training_time/60:.2f}m")
     if step % 10 == 0:
         wandb_run.log({
             "step": step,
@@ -551,7 +585,7 @@ while True:
             "train/dt": dt,
             "train/tok_per_sec": tok_per_sec,
             "train/mfu": mfu,
-            "train/epoch": current_epoch,
+            "train/epoch": train_loader.current_epoch,
         })
 
     # The garbage collector spends ~500ms scanning for cycles quite frequently.

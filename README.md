@@ -174,13 +174,21 @@ python data/nemotron-cascade-sft-stage-2/prepare.py \
 
 ```bash
 torchrun --standalone --nproc_per_node=8 -m scripts.chat_sft -- \
+    --model-tag="twostage-s2" \
+    --output-model-tag="twostage-s2-chat" \
     --chat-dataset=nemotron-cascade-sft-stage-2 \
-    --chat-data-dir /scratch/$USER/etude/datasets/nemotron-cascade-sft-stage-2 \
-    --model-tag="twostage-s2-chat"
+    --chat-data-dir /scratch/$USER/etude/datasets/nemotron-cascade-sft-stage-2
 ```
 
 `scripts/chat_sft.py` defaults to `--chat-dataset=auto`: it uses prepared Nemotron data if
 present and falls back to the old legacy in-memory mixture for quick local smoke runs.
+
+For the single-GPU Slurm launcher, `runs/d24_chat_sft.slurm` now separates the base
+checkpoint source from the SFT output tag, and supports true SFT resume:
+
+```bash
+MODEL_TAG=d24-h100-rust-s2-010200-sft-008800 RESUME_FROM_STEP=500 sbatch runs/d24_chat_sft.slurm
+```
 
 #### 7. Chat with the Model
 
