@@ -576,26 +576,52 @@ class RustBPETokenizer:
 def get_tokenizer():
     return HuggingFaceTokenizer.from_pretrained("Qwen/Qwen3.5-0.8B")
 
-def get_token_bytes(device="cpu", vocab_size=None):
-    """Load token_bytes tensor, optionally padding to match model vocab_size."""
+def _compute_token_bytes(tokenizer, device="cpu"):
+    """Compute the byte length for each token id of the active tokenizer."""
+    import torch
+    special_tokens = set(tokenizer.get_special_tokens())
+    token_bytes = torch.zeros(tokenizer.get_vocab_size(), dtype=torch.int64, device=device)
+    for token_id in range(tokenizer.get_vocab_size()):
+        token = tokenizer.id_to_token(token_id)
+        if token in special_tokens:
+            continue
+        token_str = tokenizer.decode([token_id])
+        token_bytes[token_id] = len(token_str.encode("utf-8"))
+    return token_bytes
+
+
+def _save_token_bytes_cache(token_bytes_path, token_bytes):
+    """Best-effort atomic cache write for token_bytes."""
+    import torch
+    os.makedirs(os.path.dirname(token_bytes_path), exist_ok=True)
+    tmp_path = f"{token_bytes_path}.{os.getpid()}.tmp"
+    with open(tmp_path, "wb") as f:
+        torch.save(token_bytes.detach().cpu(), f)
+    os.replace(tmp_path, token_bytes_path)
+
+
+def get_token_bytes(device="cpu", vocab_size=None, tokenizer=None):
+    """Load token_bytes, rebuilding if the cached tensor does not match the active tokenizer."""
     import torch
     from etude.common import get_base_dir
     base_dir = get_base_dir()
     tokenizer_dir = os.path.join(base_dir, "tokenizer")
     token_bytes_path = os.path.join(tokenizer_dir, "token_bytes.pt")
+    tokenizer = tokenizer or get_tokenizer()
+    expected_vocab_size = tokenizer.get_vocab_size()
     if os.path.exists(token_bytes_path):
         with open(token_bytes_path, "rb") as f:
             token_bytes = torch.load(f, map_location=device)
+        if token_bytes.size(0) != expected_vocab_size:
+            print(
+                f"Cached token_bytes vocab size {token_bytes.size(0)} does not match "
+                f"active tokenizer vocab size {expected_vocab_size}; recomputing."
+            )
+            token_bytes = _compute_token_bytes(tokenizer, device=device)
+            _save_token_bytes_cache(token_bytes_path, token_bytes)
     else:
-        tokenizer = get_tokenizer()
-        special_tokens = set(tokenizer.get_special_tokens())
-        token_bytes = torch.zeros(tokenizer.get_vocab_size(), dtype=torch.int64, device=device)
-        for token_id in range(tokenizer.get_vocab_size()):
-            token = tokenizer.id_to_token(token_id)
-            if token in special_tokens:
-                continue
-            token_str = tokenizer.decode([token_id])
-            token_bytes[token_id] = len(token_str.encode("utf-8"))
+        token_bytes = _compute_token_bytes(tokenizer, device=device)
+        _save_token_bytes_cache(token_bytes_path, token_bytes)
     # Pad with zeros if model vocab_size is larger (e.g. due to embedding padding)
     if vocab_size is not None and token_bytes.size(0) < vocab_size:
         pad = torch.zeros(vocab_size - token_bytes.size(0), dtype=token_bytes.dtype, device=device)

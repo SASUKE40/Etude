@@ -1,6 +1,7 @@
 from dataclasses import dataclass
+import torch
 
-from etude.tokenizer import HuggingFaceTokenizer
+from etude.tokenizer import HuggingFaceTokenizer, get_token_bytes
 
 
 @dataclass
@@ -113,3 +114,25 @@ def test_hf_tokenizer_renders_legacy_chat_tokens():
     assert rendered == "<|bos|><|user_start|>Hello<|user_end|><|assistant_start|>World<|assistant_end|>"
     assert len(ids) == len(mask)
     assert sum(mask) == len("World") + 1  # assistant content + <|assistant_end|>
+
+
+def test_get_token_bytes_rebuilds_stale_cache(tmp_path, monkeypatch):
+    tokenizer = HuggingFaceTokenizer(
+        MockHFBackend(
+            {
+                "<|endoftext|>": 1000,
+                "<|im_start|>": 1001,
+                "<|im_end|>": 1002,
+            }
+        )
+    )
+    tokenizer_dir = tmp_path / "tokenizer"
+    tokenizer_dir.mkdir()
+    torch.save(torch.zeros(8, dtype=torch.int64), tokenizer_dir / "token_bytes.pt")
+    monkeypatch.setenv("ETUDE_BASE_DIR", str(tmp_path))
+
+    token_bytes = get_token_bytes(device="cpu", tokenizer=tokenizer)
+
+    assert token_bytes.shape == (1003,)
+    assert token_bytes[ord("A")].item() == 1
+    assert token_bytes[1000].item() == 0
