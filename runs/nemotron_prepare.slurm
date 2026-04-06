@@ -5,7 +5,8 @@
 #
 # Examples:
 #   sbatch runs/nemotron_prepare.slurm
-#   MAX_ROWS_PER_SUBSET=1000 SUBSETS=general,instruction-following,tool_calling sbatch runs/nemotron_prepare.slurm
+#   MAX_ROWS_PER_SUBSET=1000 sbatch runs/nemotron_prepare.slurm
+#   SUBSETS=instruction-following,code sbatch runs/nemotron_prepare.slurm
 
 #SBATCH --job-name=nemotron-prep
 #SBATCH --partition=sharing
@@ -28,7 +29,7 @@ mkdir -p "$ETUDE_BASE_DIR" "$HF_HOME"
 source .venv/bin/activate
 
 OUTPUT_DIR="${OUTPUT_DIR:-$ETUDE_BASE_DIR/datasets/nemotron-cascade-sft-stage-2}"
-SUBSETS="${SUBSETS:-general,instruction-following,tool_calling,math,science,code,swe_localization,swe_repair,swe_testgen}"
+SUBSETS="${SUBSETS:-instruction-following,code}"
 VAL_RATIO="${VAL_RATIO:-0.005}"
 ROWS_PER_SHARD="${ROWS_PER_SHARD:-50000}"
 FLUSH_ROWS="${FLUSH_ROWS:-16}"

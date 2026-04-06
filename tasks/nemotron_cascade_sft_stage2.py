@@ -13,7 +13,7 @@ from etude.common import get_base_dir
 from tasks.common import Task
 
 HF_DATASET = "nvidia/Nemotron-Cascade-SFT-Stage-2"
-DEFAULT_SUBSETS = (
+SUPPORTED_SUBSETS = (
     "general",
     "instruction-following",
     "tool_calling",
@@ -23,6 +23,10 @@ DEFAULT_SUBSETS = (
     "swe_localization",
     "swe_repair",
     "swe_testgen",
+)
+DEFAULT_SUBSETS = (
+    "instruction-following",
+    "code",
 )
 SUPPORTED_ROLES = {"system", "user", "assistant"}
 
@@ -41,7 +45,7 @@ def parse_subset_names(raw_subsets):
     subsets = [subset for subset in subsets if subset]
     if not subsets:
         return None
-    unknown = sorted(set(subsets) - set(DEFAULT_SUBSETS))
+    unknown = sorted(set(subsets) - set(SUPPORTED_SUBSETS))
     if unknown:
         raise ValueError(f"Unknown Nemotron subsets: {unknown}")
     return tuple(subsets)

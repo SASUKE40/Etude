@@ -243,11 +243,11 @@ python data/nemotron-cascade-sft-stage-2/prepare.py \
 ```
 
 The script streams the dataset from Hugging Face and writes deterministic `train/` and `val/`
-splits. For smaller smoke runs:
+splits. By default it prepares only the `instruction-following` and `code` subsets. For smaller smoke runs:
 
 ```bash
 python data/nemotron-cascade-sft-stage-2/prepare.py \
-    --subsets general,instruction-following,tool_calling \
+    --subsets instruction-following,code \
     --max-rows-per-subset 50000
 ```
 

@@ -161,11 +161,12 @@ python data/nemotron-cascade-sft-stage-2/prepare.py \
 ```
 
 The prepare step streams the source dataset and writes deterministic `train/` and `val/`
-parquet shards. By default it includes all published subsets. For smaller smoke runs:
+parquet shards. By default it only downloads the `instruction-following` and `code` subsets.
+To override that subset list explicitly:
 
 ```bash
 python data/nemotron-cascade-sft-stage-2/prepare.py \
-    --subsets general,instruction-following,tool_calling \
+    --subsets instruction-following,code \
     --max-rows-per-subset 50000
 ```
 

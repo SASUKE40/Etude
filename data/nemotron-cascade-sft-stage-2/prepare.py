@@ -7,7 +7,7 @@ deterministic train/val split by hashing the subset name plus conversation.
 Usage:
     python data/nemotron-cascade-sft-stage-2/prepare.py
     python data/nemotron-cascade-sft-stage-2/prepare.py --output-dir /scratch/$USER/etude/datasets/nemotron-cascade-sft-stage-2
-    python data/nemotron-cascade-sft-stage-2/prepare.py --subsets general,instruction-following,tool_calling
+    python data/nemotron-cascade-sft-stage-2/prepare.py --subsets instruction-following,code
 """
 
 import argparse
