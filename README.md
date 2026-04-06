@@ -190,6 +190,12 @@ checkpoint source from the SFT output tag, and supports true SFT resume:
 MODEL_TAG=d24-h100-rust-s2-010200-sft-008800 RESUME_FROM_STEP=500 sbatch runs/d24_chat_sft.slurm
 ```
 
+To auto-resubmit the chat SFT Slurm chain when jobs hit the time limit, use:
+
+```bash
+bash runs/watch_slurm_time_limit.sh d24-sft
+```
+
 #### 7. Chat with the Model
 
 ```bash
@@ -392,7 +398,7 @@ To automatically resubmit when Slurm kills the job for hitting the time limit, r
 bash runs/watch_slurm_time_limit.sh d24-h100
 ```
 
-That auto-detects the newest `runs/d24-h100-<job_id>.log` file by modification time, infers the matching `sbatch` script, and keeps following each newly resumed Slurm log until you stop it. If no matching log exists yet, it waits for the first one to appear. You can still pass an explicit log file or `sbatch` file:
+The known prefixes are `d24-h100`, `d24-h200`, `d24-rust`, and `d24-sft`. The watcher auto-detects the newest matching `runs/<prefix>-<job_id>.log` file by modification time, infers the matching `sbatch` script, and keeps following each newly resumed Slurm log until you stop it. If no matching log exists yet, it waits for the first one to appear. You can still pass an explicit log file or `sbatch` file:
 
 ```bash
 bash runs/watch_slurm_time_limit.sh runs/d24-h100-<job_id>.log runs/d24_h100_resume.slurm
