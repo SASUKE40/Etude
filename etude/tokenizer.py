@@ -154,6 +154,192 @@ class HuggingFaceTokenizer:
         self.tokenizer.save(tokenizer_path)
         print(f"Saved tokenizer to {tokenizer_path}")
 
+    def _prepare_conversation_messages(self, conversation):
+        """Normalize a chat conversation to the alternating user/assistant format."""
+        assert "messages" in conversation, "Conversation must contain a messages field"
+        messages = conversation["messages"]
+        assert len(messages) >= 1, f"Conversation has less than 1 message: {messages}"
+
+        # Some datasets prepend a system message. Fold it into the first user turn.
+        if messages[0]["role"] == "system":
+            conversation = copy.deepcopy(conversation)
+            messages = conversation["messages"]
+            assert len(messages) >= 2, "System message must be followed by at least one user message"
+            assert messages[1]["role"] == "user", "System message must be followed by a user message"
+            messages[1]["content"] = messages[0]["content"] + "\n\n" + messages[1]["content"]
+            messages = messages[1:]
+
+        for i, message in enumerate(messages):
+            must_be_from = "user" if i % 2 == 0 else "assistant"
+            assert message["role"] == must_be_from, (
+                f"Message {i} is from {message['role']} but should be from {must_be_from}"
+            )
+        return messages
+
+    def _iter_assistant_parts(self, content):
+        if isinstance(content, str):
+            yield "text", content
+            return
+        if not isinstance(content, list):
+            raise ValueError(f"Unknown content type: {type(content)}")
+        for part in content:
+            yield part["type"], part["text"]
+
+    def _render_conversation_legacy(self, messages, max_tokens):
+        ids, mask = [], []
+
+        def add_tokens(token_ids, mask_val):
+            if isinstance(token_ids, int):
+                token_ids = [token_ids]
+            ids.extend(token_ids)
+            mask.extend([mask_val] * len(token_ids))
+
+        bos = self.get_bos_token_id()
+        user_start = self.encode_special("<|user_start|>")
+        user_end = self.encode_special("<|user_end|>")
+        assistant_start = self.encode_special("<|assistant_start|>")
+        assistant_end = self.encode_special("<|assistant_end|>")
+        python_start = self.encode_special("<|python_start|>")
+        python_end = self.encode_special("<|python_end|>")
+        output_start = self.encode_special("<|output_start|>")
+        output_end = self.encode_special("<|output_end|>")
+
+        add_tokens(bos, 0)
+        for message in messages:
+            content = message["content"]
+            if message["role"] == "user":
+                assert isinstance(content, str), "User messages are simply expected to be strings"
+                add_tokens(user_start, 0)
+                add_tokens(self.encode(content), 0)
+                add_tokens(user_end, 0)
+                continue
+
+            add_tokens(assistant_start, 0)
+            for part_type, text in self._iter_assistant_parts(content):
+                value_ids = self.encode(text)
+                if part_type == "text":
+                    add_tokens(value_ids, 1)
+                elif part_type == "python":
+                    add_tokens(python_start, 1)
+                    add_tokens(value_ids, 1)
+                    add_tokens(python_end, 1)
+                elif part_type == "python_output":
+                    add_tokens(output_start, 0)
+                    add_tokens(value_ids, 0)
+                    add_tokens(output_end, 0)
+                else:
+                    raise ValueError(f"Unknown part type: {part_type}")
+            add_tokens(assistant_end, 1)
+
+        return ids[:max_tokens], mask[:max_tokens]
+
+    def _render_conversation_qwen(self, messages, max_tokens):
+        ids, mask = [], []
+
+        def add_tokens(token_ids, mask_val):
+            if isinstance(token_ids, int):
+                token_ids = [token_ids]
+            ids.extend(token_ids)
+            mask.extend([mask_val] * len(token_ids))
+
+        bos = self.get_bos_token_id()
+        im_start = self.encode_special("<|im_start|>")
+        im_end = self.encode_special("<|im_end|>")
+
+        add_tokens(bos, 0)
+        for message in messages:
+            role = message["role"]
+            content = message["content"]
+            add_tokens(im_start, 0)
+            add_tokens(self.encode(f"{role}\n"), 0)
+            if role == "user":
+                assert isinstance(content, str), "User messages are simply expected to be strings"
+                add_tokens(self.encode(content), 0)
+                add_tokens(im_end, 0)
+                add_tokens(self.encode("\n"), 0)
+                continue
+
+            for part_type, text in self._iter_assistant_parts(content):
+                value_ids = self.encode(text)
+                if part_type in {"text", "python"}:
+                    add_tokens(value_ids, 1)
+                elif part_type == "python_output":
+                    add_tokens(value_ids, 0)
+                else:
+                    raise ValueError(f"Unknown part type: {part_type}")
+            add_tokens(im_end, 1)
+            add_tokens(self.encode("\n"), 1)
+
+        return ids[:max_tokens], mask[:max_tokens]
+
+    def render_conversation(self, conversation, max_tokens=2048):
+        """
+        Tokenize a single Chat conversation (which we call a "doc" or "document" here).
+        Returns:
+        - ids: list[int] is a list of token ids of this rendered conversation
+        - mask: list[int] of same length, mask = 1 for tokens that the Assistant is expected to train on.
+        """
+        messages = self._prepare_conversation_messages(conversation)
+
+        has_legacy_chat = all(
+            self.encode_special(token) is not None
+            for token in ["<|user_start|>", "<|user_end|>", "<|assistant_start|>", "<|assistant_end|>"]
+        )
+        has_qwen_chat = all(
+            self.encode_special(token) is not None for token in ["<|im_start|>", "<|im_end|>"]
+        )
+
+        if has_legacy_chat:
+            return self._render_conversation_legacy(messages, max_tokens=max_tokens)
+        if has_qwen_chat:
+            return self._render_conversation_qwen(messages, max_tokens=max_tokens)
+        raise RuntimeError(
+            "Tokenizer does not expose supported chat special tokens for render_conversation"
+        )
+
+    def visualize_tokenization(self, ids, mask, with_token_id=False):
+        """Small helper function useful in debugging: visualize the tokenization of render_conversation"""
+        RED = '\033[91m'
+        GREEN = '\033[92m'
+        RESET = '\033[0m'
+        GRAY = '\033[90m'
+        tokens = []
+        for token_id, mask_val in zip(ids, mask):
+            token_str = self.decode([token_id])
+            color = GREEN if mask_val == 1 else RED
+            tokens.append(f"{color}{token_str}{RESET}")
+            if with_token_id:
+                tokens.append(f"{GRAY}({token_id}){RESET}")
+        return '|'.join(tokens)
+
+    def render_for_completion(self, conversation):
+        """
+        Used during Reinforcement Learning. In that setting, we want to
+        render the conversation priming the Assistant for a completion.
+        Unlike the Chat SFT case, we don't need to return the mask.
+        """
+        conversation = copy.deepcopy(conversation) # avoid mutating the original
+        messages = conversation["messages"]
+        assert messages[-1]["role"] == "assistant", "Last message must be from the Assistant"
+        messages.pop()
+
+        ids, _ = self.render_conversation(conversation)
+
+        assistant_start = self.encode_special("<|assistant_start|>")
+        if assistant_start is not None:
+            ids.append(assistant_start)
+            return ids
+
+        im_start = self.encode_special("<|im_start|>")
+        if im_start is not None:
+            ids.append(im_start)
+            ids.extend(self.encode("assistant\n"))
+            return ids
+
+        raise RuntimeError(
+            "Tokenizer does not expose supported chat special tokens for render_for_completion"
+        )
+
 # -----------------------------------------------------------------------------
 # Tokenizer based on rustbpe + tiktoken combo
 import pickle
