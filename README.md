@@ -195,6 +195,46 @@ If you want to inspect the Rust-specialized base checkpoint before chat SFT, use
 python -m scripts.chat_cli -i base -g twostage-s2
 ```
 
+To chat with a specific chat-SFT checkpoint saved under `chatsft_checkpoints`, point
+`ETUDE_BASE_DIR` at the directory root, then pass the checkpoint directory name as the
+model tag and the checkpoint suffix as the step. For example, for:
+
+```text
+/scratch/zhu.shili/etude/chatsft_checkpoints/d24-h100-rust-s2-010200-sft-008800/model_000500.pt
+```
+
+use:
+
+```bash
+cd ~/Etude && source .venv/bin/activate
+export ETUDE_BASE_DIR=/scratch/zhu.shili/etude
+export HF_HOME=/scratch/zhu.shili/hf_cache
+
+python -m scripts.chat_cli \
+    -g d24-h100-rust-s2-010200-sft-008800 \
+    -s 500 \
+    --device-type cuda
+```
+
+For a one-shot prompt:
+
+```bash
+python -m scripts.chat_cli \
+    -g d24-h100-rust-s2-010200-sft-008800 \
+    -s 500 \
+    --device-type cuda \
+    -p "Hello"
+```
+
+For the web UI:
+
+```bash
+python -m scripts.chat_web \
+    -g d24-h100-rust-s2-010200-sft-008800 \
+    -s 500 \
+    --device-type cuda
+```
+
 ### Single-Stage Training (FineWeb-Edu)
 
 The single-dataset training path is also supported:
