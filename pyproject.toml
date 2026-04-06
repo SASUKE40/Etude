@@ -10,6 +10,7 @@ dependencies = [
     "ipykernel>=7.1.0",
     "flash-attn-4>=4.0.0b4",
     "matplotlib>=3.10.8",
+    "pyarrow>=18.1.0",
     "psutil>=7.1.0",
     "python-dotenv>=1.2.1",
     "regex>=2025.9.1",

@@ -14,8 +14,17 @@ import argparse
 import json
 import os
 
-import pyarrow as pa
-import pyarrow.parquet as pq
+try:
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+except ModuleNotFoundError as exc:
+    raise SystemExit(
+        "pyarrow is required to write local parquet shards for Nemotron chat SFT.\n"
+        "Install project dependencies first, for example:\n"
+        "  source .venv/bin/activate && uv sync --extra gpu\n"
+        "or:\n"
+        "  uv sync --extra gpu"
+    ) from exc
 from datasets import load_dataset
 from tqdm import tqdm
 
