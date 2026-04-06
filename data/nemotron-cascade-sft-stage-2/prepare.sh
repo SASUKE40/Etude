@@ -19,16 +19,18 @@ mkdir -p "$OUTPUT_DIR"
 echo "=== Preparing Nemotron Cascade SFT Stage 2 ==="
 echo "HF_HOME: $HF_HOME"
 echo "OUTPUT_DIR: $OUTPUT_DIR"
+echo "NOTE: run this on a compute node, not the login node, for the full dataset."
 
 cd "$REPO_ROOT"
 export PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONUNBUFFERED=1
 
 if [ -x "$REPO_ROOT/.venv/bin/python" ]; then
     PYTHON_BIN="$REPO_ROOT/.venv/bin/python"
 elif command -v uv >/dev/null 2>&1; then
-    exec uv run python data/nemotron-cascade-sft-stage-2/prepare.py --output-dir "$OUTPUT_DIR"
+    exec uv run python -u data/nemotron-cascade-sft-stage-2/prepare.py --output-dir "$OUTPUT_DIR"
 else
     PYTHON_BIN="python"
 fi
 
-"$PYTHON_BIN" data/nemotron-cascade-sft-stage-2/prepare.py --output-dir "$OUTPUT_DIR"
+"$PYTHON_BIN" -u data/nemotron-cascade-sft-stage-2/prepare.py --output-dir "$OUTPUT_DIR"
