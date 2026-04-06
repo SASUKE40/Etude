@@ -249,6 +249,33 @@ python -m scripts.chat_web \
     --device-type cuda
 ```
 
+To use the latest saved checkpoint from a chat-SFT run, look for the highest
+`model_*.pt` suffix in that checkpoint directory. For example, if:
+
+```text
+/scratch/zhu.shili/etude/chatsft_checkpoints/d24-h100-rust-s2-010200-sft-008800/
+  model_001500.pt
+  meta_001500.json
+```
+
+then the latest checkpoint is step `1500`, and you can chat with it directly:
+
+```bash
+python -m scripts.chat_cli \
+    -g d24-h100-rust-s2-010200-sft-008800 \
+    -s 1500 \
+    --device-type cuda
+```
+
+You can also omit `-s` and let Etude load the latest available checkpoint
+automatically for that model tag:
+
+```bash
+python -m scripts.chat_cli \
+    -g d24-h100-rust-s2-010200-sft-008800 \
+    --device-type cuda
+```
+
 ### Single-Stage Training (FineWeb-Edu)
 
 The single-dataset training path is also supported:
