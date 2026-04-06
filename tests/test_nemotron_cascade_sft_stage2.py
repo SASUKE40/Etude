@@ -4,10 +4,12 @@ import pytest
 
 from tasks.nemotron_cascade_sft_stage2 import (
     has_prepared_data,
+    has_incomplete_split,
     has_prepared_split,
     normalize_messages,
     parse_subset_names,
     pick_split_for_messages,
+    split_success_path,
 )
 
 
@@ -61,8 +63,16 @@ def test_prepared_split_detection(tmp_path: Path):
     assert not has_prepared_data(tmp_path)
 
     (train_dir / "part_00000.parquet").touch()
+    assert not has_prepared_split(tmp_path, "train")
+    assert has_incomplete_split(tmp_path, "train")
+    assert not has_prepared_data(tmp_path)
+
+    Path(split_success_path(tmp_path, "train")).write_text("{}")
     assert has_prepared_split(tmp_path, "train")
+    assert not has_incomplete_split(tmp_path, "train")
     assert not has_prepared_data(tmp_path)
 
     (val_dir / "part_00000.parquet").touch()
+    assert has_incomplete_split(tmp_path, "val")
+    Path(split_success_path(tmp_path, "val")).write_text("{}")
     assert has_prepared_data(tmp_path)

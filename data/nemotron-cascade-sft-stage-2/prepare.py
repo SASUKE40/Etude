@@ -7,7 +7,7 @@ deterministic train/val split by hashing the subset name plus conversation.
 Usage:
     python data/nemotron-cascade-sft-stage-2/prepare.py
     python data/nemotron-cascade-sft-stage-2/prepare.py --output-dir /scratch/$USER/etude/datasets/nemotron-cascade-sft-stage-2
-    python data/nemotron-cascade-sft-stage-2/prepare.py --subsets instruction-following,code
+    python data/nemotron-cascade-sft-stage-2/prepare.py --subsets instruction-following
 """
 
 import argparse
@@ -38,12 +38,15 @@ from tasks.nemotron_cascade_sft_stage2 import (
     DEFAULT_SUBSETS,
     HF_DATASET,
     get_default_data_dir,
+    has_incomplete_split,
     has_prepared_split,
     has_prepared_data,
     normalize_messages,
     parse_subset_names,
     pick_split_for_messages,
     prepared_split_dir,
+    list_prepared_files,
+    split_success_path,
 )
 
 MESSAGE_STRUCT = pa.struct(
@@ -76,25 +79,34 @@ class RollingParquetWriter:
         self.rows_in_shard = 0
         self.total_rows = 0
         self.writer = None
+        self.current_tmp_path = None
+        self.current_final_path = None
         self.buffer = []
         assert self.flush_rows >= 1, f"flush_rows must be >= 1, got {self.flush_rows}"
 
     def _open_writer(self):
-        path = os.path.join(self.split_dir, f"part_{self.shard_idx:05d}.parquet")
+        self.current_final_path = os.path.join(self.split_dir, f"part_{self.shard_idx:05d}.parquet")
+        self.current_tmp_path = self.current_final_path + ".incomplete"
         # For long, high-cardinality reasoning traces, dictionary/statistics buffers
         # can become expensive. Keep parquet writes simple and low-memory.
         self.writer = pq.ParquetWriter(
-            path,
+            self.current_tmp_path,
             PARQUET_SCHEMA,
             compression=self.compression,
             use_dictionary=False,
             write_statistics=False,
         )
 
-    def _rotate(self):
+    def _close_current_file(self):
         if self.writer is not None:
             self.writer.close()
             self.writer = None
+            os.replace(self.current_tmp_path, self.current_final_path)
+            self.current_tmp_path = None
+            self.current_final_path = None
+
+    def _rotate(self):
+        self._close_current_file()
         self.shard_idx += 1
         self.rows_in_shard = 0
 
@@ -125,9 +137,7 @@ class RollingParquetWriter:
 
     def close(self):
         self.flush()
-        if self.writer is not None:
-            self.writer.close()
-            self.writer = None
+        self._close_current_file()
 
 
 def prepare(
@@ -147,7 +157,12 @@ def prepare(
         print(f"Found prepared train/val parquet shards in {output_dir}")
         print("Delete them to re-prepare, or use as-is.")
         return
-    if has_prepared_split(output_dir, "train") or has_prepared_split(output_dir, "val"):
+    if (
+        has_prepared_split(output_dir, "train")
+        or has_prepared_split(output_dir, "val")
+        or has_incomplete_split(output_dir, "train")
+        or has_incomplete_split(output_dir, "val")
+    ):
         raise RuntimeError(
             f"Found a partial prepared dataset in {output_dir}. "
             "Delete the existing parquet shards before re-running prepare."
@@ -219,6 +234,20 @@ def prepare(
     metadata_path = os.path.join(output_dir, "meta.json")
     with open(metadata_path, "w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2, sort_keys=True)
+    for split, split_counts in counts.items():
+        success_path = split_success_path(output_dir, split)
+        with open(success_path, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "split": split,
+                    "subsets": list(subsets),
+                    "rows": sum(split_counts.values()),
+                    "shards": len(list_prepared_files(output_dir, split)),
+                },
+                f,
+                indent=2,
+                sort_keys=True,
+            )
 
     train_total = sum(counts["train"].values())
     val_total = sum(counts["val"].values())

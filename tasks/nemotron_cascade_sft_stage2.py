@@ -26,9 +26,9 @@ SUPPORTED_SUBSETS = (
 )
 DEFAULT_SUBSETS = (
     "instruction-following",
-    "code",
 )
 SUPPORTED_ROLES = {"system", "user", "assistant"}
+SPLIT_SUCCESS_FILENAME = "_SUCCESS.json"
 
 
 def get_default_data_dir():
@@ -110,14 +110,31 @@ def prepared_split_dir(data_dir, split):
     return os.path.join(data_dir, split)
 
 
+def split_success_path(data_dir, split):
+    return os.path.join(prepared_split_dir(data_dir, split), SPLIT_SUCCESS_FILENAME)
+
+
 def list_prepared_files(data_dir=None, split="train"):
     data_dir = data_dir or get_default_data_dir()
+    if not os.path.exists(split_success_path(data_dir, split)):
+        return []
     pattern = os.path.join(prepared_split_dir(data_dir, split), "*.parquet")
     return sorted(glob.glob(pattern))
 
 
 def has_prepared_split(data_dir=None, split="train"):
     return len(list_prepared_files(data_dir=data_dir, split=split)) > 0
+
+
+def has_incomplete_split(data_dir=None, split="train"):
+    data_dir = data_dir or get_default_data_dir()
+    split_dir = prepared_split_dir(data_dir, split)
+    if not os.path.isdir(split_dir):
+        return False
+    artifacts = glob.glob(os.path.join(split_dir, "*.parquet")) + glob.glob(
+        os.path.join(split_dir, "*.parquet.incomplete")
+    )
+    return len(artifacts) > 0 and not has_prepared_split(data_dir=data_dir, split=split)
 
 
 def has_prepared_data(data_dir=None):
@@ -140,6 +157,11 @@ class NemotronCascadeSFTStage2(Task):
 
         parquet_files = list_prepared_files(data_dir=self.data_dir, split=split)
         if not parquet_files:
+            if has_incomplete_split(data_dir=self.data_dir, split=split):
+                raise RuntimeError(
+                    f"Found incomplete Nemotron data for split '{split}' in {self.data_dir}. "
+                    "Delete the existing split or dataset directory and re-run prepare."
+                )
             prepare_cmd = (
                 "python data/nemotron-cascade-sft-stage-2/prepare.py "
                 f"--output-dir {self.data_dir}"
