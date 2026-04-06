@@ -63,6 +63,7 @@ TOTAL_BATCH_SIZE="${TOTAL_BATCH_SIZE:-32768}"
 EVAL_EVERY="${EVAL_EVERY:-1000}"
 EVAL_TOKENS="${EVAL_TOKENS:-4194304}"
 CHATCORE_EVERY="${CHATCORE_EVERY:--1}"
+SAVE_EVERY="${SAVE_EVERY:-250}"
 
 MODEL_PATH="$SOURCE_CHECKPOINT_DIR/model_${STEP_PADDED}.pt"
 META_PATH="$SOURCE_CHECKPOINT_DIR/meta_${STEP_PADDED}.json"
@@ -115,6 +116,7 @@ if [ -n "$CHAT_SUBSETS" ]; then
     echo "Chat subsets: ${CHAT_SUBSETS}"
 fi
 echo "Load optimizer: ${LOAD_OPTIMIZER}"
+echo "Save every: ${SAVE_EVERY}"
 echo "Launch config: seq=${MAX_SEQ_LEN} batch=${DEVICE_BATCH_SIZE} total_batch=${TOTAL_BATCH_SIZE} grad_accum=${GRAD_ACCUM_STEPS}"
 
 CHAT_SUBSETS_ARGS=()
@@ -133,6 +135,7 @@ torchrun --standalone --nproc_per_node=1 -m scripts.chat_sft -- \
     --max-seq-len="${MAX_SEQ_LEN}" \
     --device-batch-size="${DEVICE_BATCH_SIZE}" \
     --total-batch-size="${TOTAL_BATCH_SIZE}" \
+    --save-every="${SAVE_EVERY}" \
     --eval-every="${EVAL_EVERY}" \
     --eval-tokens="${EVAL_TOKENS}" \
     --chatcore-every="${CHATCORE_EVERY}" \

@@ -51,6 +51,7 @@ parser.add_argument("--model-step", type=int, default=None, help="model step to 
 parser.add_argument("--load-optimizer", type=int, default=1, help="warm-start optimizer from pretrained checkpoint (0=no, 1=yes)")
 # Training horizon
 parser.add_argument("--num-iterations", type=int, default=-1, help="number of optimization steps (-1 = full epoch)")
+parser.add_argument("--save-every", type=int, default=-1, help="save checkpoints every N steps (-1 = only at end)")
 # Batch sizes (default: inherit from pretrained checkpoint)
 parser.add_argument("--max-seq-len", type=int, default=None, help="max context length (default: inherit from pretrain)")
 parser.add_argument("--device-batch-size", type=int, default=None, help="per-device batch size (default: inherit from pretrain)")
@@ -271,6 +272,7 @@ def sft_data_generator_bos_bestfit(split, buffer_size=100):
     dataset_size = len(dataset)
     assert dataset_size > 0
     row_capacity = args.max_seq_len + 1  # +1 for target at last position
+    render_max_tokens = row_capacity  # keep each conversation packable into one row
     bos_token = tokenizer.get_bos_token_id()
 
     # Conversation buffer: list of (token_ids, loss_mask) tuples
@@ -284,7 +286,7 @@ def sft_data_generator_bos_bestfit(split, buffer_size=100):
         nonlocal cursor, epoch
         while len(conv_buffer) < buffer_size:
             conversation = dataset[cursor]
-            ids, mask = tokenizer.render_conversation(conversation)
+            ids, mask = tokenizer.render_conversation(conversation, max_tokens=render_max_tokens)
             conv_buffer.append((ids, mask))
             cursor += ddp_world_size
             if cursor >= dataset_size:
@@ -379,6 +381,8 @@ def sft_data_generator_bos_bestfit(split, buffer_size=100):
 train_loader = sft_data_generator_bos_bestfit("train")
 build_val_loader = lambda: sft_data_generator_bos_bestfit("val")
 progress = 0 # will go from 0 to 1 over the course of the epoch
+output_dirname = args.model_tag if args.model_tag else f"d{depth}" # e.g. d12
+checkpoint_dir = os.path.join(base_dir, "chatsft_checkpoints", output_dirname)
 
 # Learning rate schedule (linear warmup, constant, linear warmdown)
 # Same shape as base_train but uses progress (0→1) instead of absolute step counts,
@@ -467,10 +471,9 @@ while True:
         })
         model.train()
 
-    # save checkpoint at the end of the run (all ranks participate so each saves its optimizer shard)
-    if last_step:
-        output_dirname = args.model_tag if args.model_tag else f"d{depth}" # e.g. d12
-        checkpoint_dir = os.path.join(base_dir, "chatsft_checkpoints", output_dirname)
+    # save checkpoint at the end of the run, or periodically if requested
+    should_save = last_step or (step > 0 and args.save_every > 0 and step % args.save_every == 0)
+    if should_save:
         save_checkpoint(
             checkpoint_dir,
             step,
