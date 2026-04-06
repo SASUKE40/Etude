@@ -2,9 +2,9 @@
 # Chat SFT starting from a base checkpoint.
 #
 # Defaults:
-#   source checkpoint: /scratch/zhu.shili/etude/base_checkpoints/d24-h100-rust-s2-010200/model_008600.pt
+#   source checkpoint: /scratch/zhu.shili/etude/base_checkpoints/d24-h100-rust-s2-010200/model_008800.pt
 #   chat dataset: nemotron-cascade-sft-stage-2
-#   output tag: d24-h100-rust-s2-010200-sft-008600
+#   output tag: d24-h100-rust-s2-010200-sft-008800
 #
 # Examples:
 #   sbatch runs/d24_chat_sft.slurm
@@ -34,7 +34,7 @@ mkdir -p "$ETUDE_BASE_DIR" "$HF_HOME" "$ETUDE_BASE_DIR/base_checkpoints"
 
 source .venv/bin/activate
 
-DEFAULT_SOURCE_MODEL_PATH="/scratch/zhu.shili/etude/base_checkpoints/d24-h100-rust-s2-010200/model_008600.pt"
+DEFAULT_SOURCE_MODEL_PATH="/scratch/zhu.shili/etude/base_checkpoints/d24-h100-rust-s2-010200/model_008800.pt"
 SOURCE_MODEL_PATH="${SOURCE_MODEL_PATH:-$DEFAULT_SOURCE_MODEL_PATH}"
 SOURCE_CHECKPOINT_DIR="$(dirname "$SOURCE_MODEL_PATH")"
 SOURCE_MODEL_FILE="$(basename "$SOURCE_MODEL_PATH")"
