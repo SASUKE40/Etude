@@ -58,6 +58,7 @@ Etude uses a two-stage training approach with a combined tokenizer:
 |---|---|---|---|---|
 | [FineWeb-Edu](https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu) (sample-10BT) | Educational web text | 10B | ~27 GB | Stage 1: general language |
 | [The Stack Dedup](https://huggingface.co/datasets/bigcode/the-stack-dedup) (Rust) | Rust source code | ~5-8B | ~15 GB | Stage 2: Rust specialization |
+| [Nemotron-Cascade-SFT-Stage-2](https://huggingface.co/datasets/nvidia/Nemotron-Cascade-SFT-Stage-2) | Multi-domain chat SFT data | ~7.8M conversations | Large, streamable | Optional chat SFT |
 
 ### Token Budget (d24 model, ~124M scaling params)
 
@@ -150,11 +151,47 @@ To auto-resubmit the Rust Slurm chain when jobs hit the time limit, use:
 bash runs/watch_slurm_time_limit.sh d24-rust
 ```
 
-#### 5. Chat with the Model
+#### 5. Optional: Prepare Chat SFT Data
 
 ```bash
-python -m scripts.chat_cli -g twostage-s2
+export HF_HOME=/scratch/$USER/hf_cache
+
+python data/nemotron-cascade-sft-stage-2/prepare.py \
+    --output-dir /scratch/$USER/etude/datasets/nemotron-cascade-sft-stage-2
+```
+
+The prepare step streams the source dataset and writes deterministic `train/` and `val/`
+parquet shards. By default it includes all published subsets. For smaller smoke runs:
+
+```bash
+python data/nemotron-cascade-sft-stage-2/prepare.py \
+    --subsets general,instruction-following,tool_calling \
+    --max-rows-per-subset 50000
+```
+
+#### 6. Optional: Chat SFT
+
+```bash
+torchrun --standalone --nproc_per_node=8 -m scripts.chat_sft -- \
+    --chat-dataset=nemotron-cascade-sft-stage-2 \
+    --chat-data-dir /scratch/$USER/etude/datasets/nemotron-cascade-sft-stage-2 \
+    --model-tag="twostage-s2-chat"
+```
+
+`scripts/chat_sft.py` defaults to `--chat-dataset=auto`: it uses prepared Nemotron data if
+present and falls back to the old legacy in-memory mixture for quick local smoke runs.
+
+#### 7. Chat with the Model
+
+```bash
+python -m scripts.chat_cli -g twostage-s2-chat
 python -m scripts.chat_web
+```
+
+If you want to inspect the Rust-specialized base checkpoint before chat SFT, use:
+
+```bash
+python -m scripts.chat_cli -i base -g twostage-s2
 ```
 
 ### Single-Stage Training (FineWeb-Edu)

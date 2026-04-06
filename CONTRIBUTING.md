@@ -231,6 +231,34 @@ python data/rust/prepare.py --output-dir /scratch/$USER/etude_data/rust --num-pr
 
 The dataloader uses **BOS-aligned best-fit packing** — 100% utilization with no padding. Data is automatically sharded across ranks for DDP training.
 
+#### Chat SFT data
+
+Chat SFT can use [Nemotron-Cascade-SFT-Stage-2](https://huggingface.co/datasets/nvidia/Nemotron-Cascade-SFT-Stage-2), prepared as local parquet shards:
+
+```bash
+export HF_HOME=/scratch/$USER/hf_cache
+
+python data/nemotron-cascade-sft-stage-2/prepare.py \
+    --output-dir /scratch/$USER/etude/datasets/nemotron-cascade-sft-stage-2
+```
+
+The script streams the dataset from Hugging Face and writes deterministic `train/` and `val/`
+splits. For smaller smoke runs:
+
+```bash
+python data/nemotron-cascade-sft-stage-2/prepare.py \
+    --subsets general,instruction-following,tool_calling \
+    --max-rows-per-subset 50000
+```
+
+Once prepared, `scripts/chat_sft.py` can use it explicitly:
+
+```bash
+torchrun --standalone --nproc_per_node=8 -m scripts.chat_sft -- \
+    --chat-dataset=nemotron-cascade-sft-stage-2 \
+    --chat-data-dir /scratch/$USER/etude/datasets/nemotron-cascade-sft-stage-2
+```
+
 ## Khoury Discovery Cluster
 
 ### SSH Access

@@ -48,6 +48,7 @@ python -m scripts.base_eval --device-batch-size=1 --split-tokens=16384 --max-per
 # TODO: host identity_conversations.jsonl and update URL
 # curl -L -o $ETUDE_BASE_DIR/identity_conversations.jsonl <URL>
 python -m scripts.chat_sft \
+    --chat-dataset=legacy \
     --max-seq-len=512 \
     --device-batch-size=32 \
     --total-batch-size=16384 \

@@ -83,7 +83,7 @@ torchrun --standalone --nproc_per_node=8 -m scripts.base_eval -- --device-batch-
 # curl -L -o $ETUDE_BASE_DIR/identity_conversations.jsonl <URL>
 
 # run SFT and eval the model
-torchrun --standalone --nproc_per_node=8 -m scripts.chat_sft -- --device-batch-size=16 --run=$WANDB_RUN
+torchrun --standalone --nproc_per_node=8 -m scripts.chat_sft -- --chat-dataset=legacy --device-batch-size=16 --run=$WANDB_RUN
 torchrun --standalone --nproc_per_node=8 -m scripts.chat_eval -- -i sft
 
 # chat with the model over CLI! Leave out the -p to chat interactively

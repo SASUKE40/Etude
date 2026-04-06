@@ -29,6 +29,11 @@ from scripts.chat_eval import run_chat_eval
 from tasks.common import TaskMixture
 from tasks.gsm8k import GSM8K
 from tasks.mmlu import MMLU
+from tasks.nemotron_cascade_sft_stage2 import (
+    NemotronCascadeSFTStage2,
+    get_default_data_dir as get_default_chat_data_dir,
+    has_prepared_data as has_prepared_chat_data,
+)
 from tasks.smoltalk import SmolTalk
 from tasks.customjson import CustomJSON
 from tasks.spellingbee import SimpleSpelling, SpellingBee
@@ -63,6 +68,26 @@ parser.add_argument("--eval-tokens", type=int, default=40*524288, help="number o
 parser.add_argument("--chatcore-every", type=int, default=200, help="evaluate ChatCORE metric every N steps (-1 = disable)")
 parser.add_argument("--chatcore-max-cat", type=int, default=-1, help="max problems per categorical task for ChatCORE")
 parser.add_argument("--chatcore-max-sample", type=int, default=24, help="max problems per generative task for ChatCORE")
+# Chat dataset
+parser.add_argument(
+    "--chat-dataset",
+    type=str,
+    default="auto",
+    choices=["auto", "legacy", "nemotron-cascade-sft-stage-2"],
+    help="Chat SFT dataset selection. 'auto' uses prepared Nemotron data if present, otherwise falls back to the legacy task mixture.",
+)
+parser.add_argument(
+    "--chat-data-dir",
+    type=str,
+    default=None,
+    help="Prepared chat dataset directory for Nemotron Stage 2 (default: ETUDE base dir under datasets/)",
+)
+parser.add_argument(
+    "--chat-subsets",
+    type=str,
+    default=None,
+    help="Optional comma-separated Nemotron subsets to use from prepared parquet shards",
+)
 # Data mixture
 parser.add_argument("--mmlu-epochs", type=int, default=3, help="number of epochs of MMLU in training mixture (teaches Multiple Choice)")
 parser.add_argument("--gsm8k-epochs", type=int, default=4, help="number of epochs of GSM8K in training mixture (teaches Math and Tool Use)")
@@ -159,24 +184,68 @@ for group in optimizer.param_groups:
     group["lr"] = group["lr"] * args.init_lr_frac
     group["initial_lr"] = group["lr"]
 
-# SFT data mixture and DataLoader
-identity_conversations_filepath = os.path.join(base_dir, "identity_conversations.jsonl")
-train_tasks = [
-    SmolTalk(split="train"), # 460K rows of general conversations
-    CustomJSON(filepath=identity_conversations_filepath), # 1000 rows of synthetic identity conversations
-    CustomJSON(filepath=identity_conversations_filepath), # 2 epochs of these
-    *[MMLU(subset="auxiliary_train", split="train") for _ in range(args.mmlu_epochs)], # 100K rows per epoch
-    *[GSM8K(subset="main", split="train") for _ in range(args.gsm8k_epochs)], # 8K rows per epoch
-    SimpleSpelling(size=200000, split="train"), # 200K rows of Simple Spelling (e.g. spell the word 'apple')
-    SpellingBee(size=80000, split="train"), # 80K rows of Spelling Bee (e.g. how many 'r' are in 'strawberry'?)
-]
-train_dataset = TaskMixture(train_tasks)
-print0(f"Training mixture: {len(train_dataset):,} rows (MMLU x{args.mmlu_epochs}, GSM8K x{args.gsm8k_epochs})")
-val_dataset = TaskMixture([
-    SmolTalk(split="test"), # 24K rows in test set
-    MMLU(subset="all", split="test", stop=5200), # 14K rows in test set, use only 5.2K to match the train ratios
-    GSM8K(subset="main", split="test", stop=420), # 1.32K rows in test set, use only 420 to match the train ratios
-]) # total: 24K + 14K + 1.32K ~= 39K rows
+def build_legacy_sft_datasets():
+    identity_conversations_filepath = os.path.join(base_dir, "identity_conversations.jsonl")
+    train_tasks = [
+        SmolTalk(split="train"), # 460K rows of general conversations
+        CustomJSON(filepath=identity_conversations_filepath), # 1000 rows of synthetic identity conversations
+        CustomJSON(filepath=identity_conversations_filepath), # 2 epochs of these
+        *[MMLU(subset="auxiliary_train", split="train") for _ in range(args.mmlu_epochs)], # 100K rows per epoch
+        *[GSM8K(subset="main", split="train") for _ in range(args.gsm8k_epochs)], # 8K rows per epoch
+        SimpleSpelling(size=200000, split="train"), # 200K rows of Simple Spelling (e.g. spell the word 'apple')
+        SpellingBee(size=80000, split="train"), # 80K rows of Spelling Bee (e.g. how many 'r' are in 'strawberry'?)
+    ]
+    train_dataset = TaskMixture(train_tasks)
+    val_dataset = TaskMixture([
+        SmolTalk(split="test"), # 24K rows in test set
+        MMLU(subset="all", split="test", stop=5200), # 14K rows in test set, use only 5.2K to match the train ratios
+        GSM8K(subset="main", split="test", stop=420), # 1.32K rows in test set, use only 420 to match the train ratios
+    ]) # total: 24K + 14K + 1.32K ~= 39K rows
+    print0(f"Training legacy SFT mixture: {len(train_dataset):,} rows (MMLU x{args.mmlu_epochs}, GSM8K x{args.gsm8k_epochs})")
+    return train_dataset, val_dataset
+
+
+def build_nemotron_sft_datasets(chat_data_dir):
+    train_dataset = NemotronCascadeSFTStage2(
+        split="train",
+        data_dir=chat_data_dir,
+        subsets=args.chat_subsets,
+    )
+    val_dataset = NemotronCascadeSFTStage2(
+        split="val",
+        data_dir=chat_data_dir,
+        subsets=args.chat_subsets,
+    )
+    subset_suffix = f" | subsets: {args.chat_subsets}" if args.chat_subsets else ""
+    print0(
+        f"Training Nemotron Cascade SFT Stage 2: {len(train_dataset):,} train rows | "
+        f"{len(val_dataset):,} val rows | data dir: {chat_data_dir}{subset_suffix}"
+    )
+    return train_dataset, val_dataset
+
+
+chat_data_dir = args.chat_data_dir or get_default_chat_data_dir()
+if args.chat_dataset == "legacy":
+    resolved_chat_dataset = "legacy"
+    train_dataset, val_dataset = build_legacy_sft_datasets()
+elif has_prepared_chat_data(chat_data_dir):
+    resolved_chat_dataset = "nemotron-cascade-sft-stage-2"
+    train_dataset, val_dataset = build_nemotron_sft_datasets(chat_data_dir)
+elif args.chat_dataset == "auto":
+    resolved_chat_dataset = "legacy"
+    print0(
+        "Prepared Nemotron chat data not found; falling back to the legacy SFT mixture. "
+        f"To prepare it, run: python data/nemotron-cascade-sft-stage-2/prepare.py --output-dir {chat_data_dir}"
+    )
+    train_dataset, val_dataset = build_legacy_sft_datasets()
+else:
+    raise FileNotFoundError(
+        "Prepared Nemotron chat data not found. "
+        f"Run: python data/nemotron-cascade-sft-stage-2/prepare.py --output-dir {chat_data_dir}"
+    )
+user_config["resolved_chat_dataset"] = resolved_chat_dataset
+user_config["resolved_chat_data_dir"] = chat_data_dir
+
 # DataLoader is defined here, it emits inputs, targets : 2D tensors of shape (device_batch_size, max_seq_len)
 # A big problem is that we don't know the final num_iterations in advance. So we create
 # these two global variables and update them from within the data generator.
