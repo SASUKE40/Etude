@@ -282,6 +282,16 @@ python -m scripts.chat_cli \
     --device-type cuda
 ```
 
+To back up only the latest base checkpoint from each folder to your home directory:
+
+```bash
+bash runs/backup_base_checkpoints.sh /scratch/zhu.shili/etude/base_checkpoints ~/base_checkpoints
+```
+
+Without arguments, the script defaults to
+`${ETUDE_BASE_DIR:-/scratch/$USER/etude}/base_checkpoints` as the source and
+`$HOME/base_checkpoints` as the destination.
+
 ### Single-Stage Training (FineWeb-Edu)
 
 The single-dataset training path is also supported:
