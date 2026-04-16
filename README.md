@@ -385,8 +385,14 @@ Lightning Thunder on the cleaned Rust dataset (`ammarnasr/the-stack-rust-clean`)
 install the extra dependencies:
 
 ```bash
-python -m pip install -U \
-    "litgpt[all]==0.5.12" \
+uv pip install -U \
+    --extra-index-url https://download.pytorch.org/whl/cu126 \
+    "torch==2.9.1" \
+    "torchvision==0.24.1" \
+    "torchaudio==2.9.1"
+
+uv pip install -U \
+    "litgpt[extra,compiler]==0.5.12" \
     "lightning-thunder>=0.2.dev20250119" \
     "transformers>=4.51.3,<4.57" \
     "huggingface-hub>=0.30,<1.4"
@@ -394,6 +400,18 @@ python -m pip install -U \
 
 `transformers>=4.57` is too new for the current LitGPT stack here and can fail
 during `litgpt download` with a `huggingface_hub` import error.
+
+If you see a `torchvision` import crash during `litgpt download`, that usually
+means your `torch` and `torchvision` builds do not match. The pinned PyTorch
+triplet above matches the official PyTorch 2.9.1 compatibility table.
+
+If `litgpt` crashes inside `bitsandbytes` with a CUDA driver error on older
+nodes, remove `bitsandbytes` from the environment. It is not required for this
+workflow:
+
+```bash
+uv pip uninstall bitsandbytes
+```
 
 Then run:
 

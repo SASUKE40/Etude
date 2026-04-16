@@ -3,10 +3,13 @@
 #
 # Prerequisites:
 #   python -m pip install -U \
-#     "litgpt[all]==0.5.12" \
+#     "litgpt[extra,compiler]==0.5.12" \
 #     "lightning-thunder>=0.2.dev20250119" \
 #     "transformers>=4.51.3,<4.57" \
-#     "huggingface-hub>=0.30,<1.4"
+#     "huggingface-hub>=0.30,<1.4" \
+#     "torch==2.9.1" \
+#     "torchvision==0.24.1" \
+#     "torchaudio==2.9.1"
 #
 # Usage:
 #   bash runs/litgpt_qwen3_rust_pretrain.sh
@@ -64,6 +67,9 @@ def version_or_none(name):
 litgpt_version = version_or_none("litgpt")
 transformers_version = version_or_none("transformers")
 hub_version = version_or_none("huggingface-hub")
+torch_version = version_or_none("torch")
+torchvision_version = version_or_none("torchvision")
+torchaudio_version = version_or_none("torchaudio")
 
 errors = []
 if litgpt_version is None:
@@ -80,6 +86,22 @@ elif Version(hub_version) >= Version("1.4"):
     errors.append(
         f"huggingface-hub=={hub_version} is outside LitGPT's supported range; use huggingface-hub>=0.30,<1.4"
     )
+if torch_version is None:
+    errors.append("torch is not installed")
+elif Version(torch_version) != Version("2.9.1"):
+    errors.append(f"torch=={torch_version} does not match the tested install here; use torch==2.9.1")
+if torchvision_version is None:
+    errors.append("torchvision is not installed")
+elif Version(torchvision_version) != Version("0.24.1"):
+    errors.append(
+        f"torchvision=={torchvision_version} does not match torch==2.9.1; use torchvision==0.24.1"
+    )
+if torchaudio_version is None:
+    errors.append("torchaudio is not installed")
+elif Version(torchaudio_version) != Version("2.9.1"):
+    errors.append(
+        f"torchaudio=={torchaudio_version} does not match torch==2.9.1; use torchaudio==2.9.1"
+    )
 
 if errors:
     print("Dependency check failed for the LitGPT Qwen3 runner:", file=sys.stderr)
@@ -88,10 +110,31 @@ if errors:
     print(file=sys.stderr)
     print("Install a compatible set with:", file=sys.stderr)
     print(
-        '  python -m pip install -U "litgpt[all]==0.5.12" '
+        '  python -m pip install -U "litgpt[extra,compiler]==0.5.12" '
         '"lightning-thunder>=0.2.dev20250119" '
         '"transformers>=4.51.3,<4.57" '
-        '"huggingface-hub>=0.30,<1.4"',
+        '"huggingface-hub>=0.30,<1.4" '
+        '"torch==2.9.1" "torchvision==0.24.1" "torchaudio==2.9.1"',
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+try:
+    import torch  # noqa: F401
+    import torchvision  # noqa: F401
+    import torchaudio  # noqa: F401
+    import litgpt  # noqa: F401
+except Exception as exc:
+    print("Import smoke test failed for the LitGPT Qwen3 runner:", file=sys.stderr)
+    print(f"  - {type(exc).__name__}: {exc}", file=sys.stderr)
+    print(file=sys.stderr)
+    print("Reinstall a compatible set with:", file=sys.stderr)
+    print(
+        '  python -m pip install -U "litgpt[extra,compiler]==0.5.12" '
+        '"lightning-thunder>=0.2.dev20250119" '
+        '"transformers>=4.51.3,<4.57" '
+        '"huggingface-hub>=0.30,<1.4" '
+        '"torch==2.9.1" "torchvision==0.24.1" "torchaudio==2.9.1"',
         file=sys.stderr,
     )
     sys.exit(1)
