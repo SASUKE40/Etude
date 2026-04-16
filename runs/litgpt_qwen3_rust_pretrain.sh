@@ -2,7 +2,11 @@
 # Continued pretraining for Qwen3-0.6B with LitGPT + LitData + Thunder.
 #
 # Prerequisites:
-#   pip install "litgpt[all]" litdata lightning-thunder
+#   python -m pip install -U \
+#     "litgpt[all]==0.5.12" \
+#     "lightning-thunder>=0.2.dev20250119" \
+#     "transformers>=4.51.3,<4.57" \
+#     "huggingface-hub>=0.30,<1.4"
 #
 # Usage:
 #   bash runs/litgpt_qwen3_rust_pretrain.sh
@@ -45,6 +49,53 @@ PROJECT="${PROJECT:-}"
 RUN_NAME="${RUN_NAME:-}"
 
 mkdir -p "$HF_HOME" "$HF_DATASETS_CACHE" "$CHECKPOINT_ROOT" "$SCRATCH_ROOT"
+
+python - <<'PY'
+from importlib import metadata
+from packaging.version import Version
+import sys
+
+def version_or_none(name):
+    try:
+        return metadata.version(name)
+    except metadata.PackageNotFoundError:
+        return None
+
+litgpt_version = version_or_none("litgpt")
+transformers_version = version_or_none("transformers")
+hub_version = version_or_none("huggingface-hub")
+
+errors = []
+if litgpt_version is None:
+    errors.append("litgpt is not installed")
+if transformers_version is None:
+    errors.append("transformers is not installed")
+elif Version(transformers_version) >= Version("4.57"):
+    errors.append(
+        f"transformers=={transformers_version} is too new for LitGPT 0.5.12; use transformers>=4.51.3,<4.57"
+    )
+if hub_version is None:
+    errors.append("huggingface-hub is not installed")
+elif Version(hub_version) >= Version("1.4"):
+    errors.append(
+        f"huggingface-hub=={hub_version} is outside LitGPT's supported range; use huggingface-hub>=0.30,<1.4"
+    )
+
+if errors:
+    print("Dependency check failed for the LitGPT Qwen3 runner:", file=sys.stderr)
+    for error in errors:
+        print(f"  - {error}", file=sys.stderr)
+    print(file=sys.stderr)
+    print("Install a compatible set with:", file=sys.stderr)
+    print(
+        '  python -m pip install -U "litgpt[all]==0.5.12" '
+        '"lightning-thunder>=0.2.dev20250119" '
+        '"transformers>=4.51.3,<4.57" '
+        '"huggingface-hub>=0.30,<1.4"',
+        file=sys.stderr,
+    )
+    sys.exit(1)
+PY
 
 echo "=== Downloading LitGPT checkpoint ==="
 litgpt download "$MODEL_NAME" --checkpoint_dir "$CHECKPOINT_ROOT"

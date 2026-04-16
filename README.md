@@ -385,8 +385,15 @@ Lightning Thunder on the cleaned Rust dataset (`ammarnasr/the-stack-rust-clean`)
 install the extra dependencies:
 
 ```bash
-pip install "litgpt[all]" litdata lightning-thunder
+python -m pip install -U \
+    "litgpt[all]==0.5.12" \
+    "lightning-thunder>=0.2.dev20250119" \
+    "transformers>=4.51.3,<4.57" \
+    "huggingface-hub>=0.30,<1.4"
 ```
+
+`transformers>=4.57` is too new for the current LitGPT stack here and can fail
+during `litgpt download` with a `huggingface_hub` import error.
 
 Then run:
 
