@@ -24,6 +24,8 @@ def _build_arg_parser():
     parser.add_argument("--max-length", type=int, default=2048)
     parser.add_argument("--batch-size", type=int, default=4, help="Per-device micro batch size.")
     parser.add_argument("--num-workers", type=int, default=4)
+    parser.add_argument("--preprocessing-num-workers", type=int, default=None)
+    parser.add_argument("--processed-dataset-dir", type=str, default=None)
     parser.add_argument("--learning-rate", type=float, default=5e-5)
     parser.add_argument("--warmup-steps", type=int, default=500)
     parser.add_argument("--total-steps", type=int, default=50_000)
@@ -47,6 +49,8 @@ def main():
         max_length=args.max_length,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
+        preprocessing_num_workers=args.preprocessing_num_workers,
+        processed_dataset_dir=args.processed_dataset_dir,
     )
 
     model = QwenRustPretrainer(
