@@ -413,6 +413,15 @@ workflow:
 uv pip uninstall bitsandbytes
 ```
 
+If you see `warnings.warn("transformer_engine module not found!")` from Thunder,
+that is only an optional-acceleration warning. The workflow can continue
+without Transformer Engine installed. If you want to enable that backend
+explicitly, install:
+
+```bash
+uv pip install "transformer_engine[pytorch]"
+```
+
 Then run:
 
 ```bash
