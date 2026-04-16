@@ -10,7 +10,7 @@
 #SBATCH --gres=gpu:h100:1
 #SBATCH --ntasks=1
 #SBATCH --mem=80GB
-#SBATCH --time=4:00:00
+#SBATCH --time=1:00:00
 #SBATCH --output=runs/qwen-rust-%j.log
 
 set -euo pipefail
