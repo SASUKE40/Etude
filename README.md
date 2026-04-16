@@ -101,6 +101,18 @@ python data/fineweb-edu/prepare.py --output-dir /scratch/$USER/etude/fineweb-edu
 
 # Rust from The Stack (gated — requires `huggingface-cli login`)
 python data/rust/prepare.py --output-dir /scratch/$USER/etude/rust
+
+# Rust train split as sharded .txt files in /scratch
+bash data/rust/prepare_txt.sh
+```
+
+The text export downloads `ammarnasr/the-stack-rust-clean` and writes sharded
+`train_*.txt` files plus `metadata.json` to
+`/scratch/$USER/the-stack-rust-clean/train_txt` by default. To override the
+destination:
+
+```bash
+python data/rust/prepare_txt.py --output-dir /scratch/$USER/the-stack-rust-clean/train_txt
 ```
 
 #### 2. Train Tokenizer (on combined data)
@@ -366,6 +378,47 @@ Override the Slurm defaults at submit time with environment variables, for examp
 
 ```bash
 TOTAL_STEPS=10000 BATCH_SIZE=2 OUTPUT_DIR=/scratch/$USER/qwen-rust sbatch runs/qwen_base_train.slurm
+```
+
+For a LitGPT-based continued pretraining path using Qwen3-0.6B, LitData, and
+Lightning Thunder on the cleaned Rust dataset (`ammarnasr/the-stack-rust-clean`),
+install the extra dependencies:
+
+```bash
+pip install "litgpt[all]" litdata lightning-thunder
+```
+
+Then run:
+
+```bash
+bash runs/litgpt_qwen3_rust_pretrain.sh
+```
+
+That launcher will:
+
+- download the LitGPT-compatible `Qwen/Qwen3-0.6B` checkpoint
+- export the Rust `train` and `valid` splits to sharded text under `/scratch`
+- convert those shards into LitData token chunks
+- start continued pretraining with LitGPT using Thunder as the compile backend by default
+
+Useful overrides:
+
+```bash
+MAX_TOKENS=100000000 MICRO_BATCH_SIZE=2 bash runs/litgpt_qwen3_rust_pretrain.sh
+COMPILER=torch OUT_DIR=/scratch/$USER/litgpt-rust-qwen3/out/smoke bash runs/litgpt_qwen3_rust_pretrain.sh
+```
+
+For manual control, the dataset preparation and training entrypoints are:
+
+```bash
+python data/rust/prepare_litgpt_litdata.py \
+    --tokenizer-dir /scratch/$USER/litgpt-checkpoints/Qwen/Qwen3-0.6B
+
+python scripts/litgpt_qwen3_rust_pretrain.py \
+    --model-name Qwen/Qwen3-0.6B \
+    --data-path /scratch/$USER/litgpt-rust-qwen3/litdata \
+    --tokenizer-dir /scratch/$USER/litgpt-checkpoints/Qwen/Qwen3-0.6B \
+    --out-dir /scratch/$USER/litgpt-rust-qwen3/out/qwen3-0.6b-rust
 ```
 
 To load the resulting base checkpoint and chat with it:
