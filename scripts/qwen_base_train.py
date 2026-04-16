@@ -5,7 +5,7 @@ from lightning.pytorch.loggers import WandbLogger
 import lightning as L
 import torch
 
-from etude.common import COMPUTE_DTYPE
+from etude.common import COMPUTE_DTYPE, get_base_dir
 from etude.qwen_data_module import RustCodeDataModule
 from etude.qwen_trainer import QwenRustPretrainer
 
@@ -16,6 +16,8 @@ elif COMPUTE_DTYPE == torch.float16:
     amp_precision = "16-mixed"
 else:
     amp_precision = "32-true"
+
+default_checkpoint_dir = f"{get_base_dir()}/checkpoints/qwen-rust"
 
 
 def _build_arg_parser():
@@ -29,7 +31,7 @@ def _build_arg_parser():
     parser.add_argument("--learning-rate", type=float, default=5e-5)
     parser.add_argument("--warmup-steps", type=int, default=500)
     parser.add_argument("--total-steps", type=int, default=50_000)
-    parser.add_argument("--checkpoint-dir", type=str, default="checkpoints/qwen-rust")
+    parser.add_argument("--checkpoint-dir", type=str, default=default_checkpoint_dir)
     parser.add_argument("--output-dir", type=str, default="qwen3.5-0.8b-rust")
     parser.add_argument("--project", type=str, default="qwen-rust-pretrain")
     parser.add_argument("--accelerator", type=str, default="gpu")
