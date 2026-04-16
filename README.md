@@ -342,6 +342,32 @@ If you want to exercise the H100-specific FP8 path too, add `--fp8`.
 
 If your W&B account is already configured locally, you can omit `WANDB_ENTITY`. If you do not want W&B logging for the smoke run, set `--run=dummy`.
 
+For the Lightning-based Qwen Rust pretraining entrypoint, run:
+
+```bash
+python -m scripts.qwen_base_train \
+    --model-name Qwen/Qwen3.5-0.8B-Base \
+    --max-length 2048 \
+    --batch-size 4 \
+    --learning-rate 5e-5 \
+    --warmup-steps 500 \
+    --total-steps 50000 \
+    --checkpoint-dir checkpoints/qwen-rust \
+    --output-dir qwen3.5-0.8b-rust
+```
+
+There is also a matching Slurm launcher for a 1×H100 run:
+
+```bash
+sbatch runs/qwen_base_train.slurm
+```
+
+Override the Slurm defaults at submit time with environment variables, for example:
+
+```bash
+TOTAL_STEPS=10000 BATCH_SIZE=2 OUTPUT_DIR=/scratch/$USER/qwen-rust sbatch runs/qwen_base_train.slurm
+```
+
 To load the resulting base checkpoint and chat with it:
 
 ```bash
