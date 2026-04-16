@@ -9,6 +9,7 @@ dependencies = [
     "fastapi>=0.117.1",
     "ipykernel>=7.1.0",
     "flash-attn-4>=4.0.0b4",
+    "lightning>=2.5.0",
     "matplotlib>=3.10.8",
     "pyarrow>=18.1.0",
     "psutil>=7.1.0",
