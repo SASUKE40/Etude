@@ -2,11 +2,13 @@
 """
 Download and normalize NVIDIA Nemotron instruction-following data for LitGPT.
 
-LitGPT's documented JSON finetune path accepts a single JSON file via
-`--data JSON --data.json_path ...`, so this script converts the upstream JSONL
-into one JSON array of chat samples:
+Different LitGPT releases expect different JSON schemas. The install on this
+cluster uses the older Alpaca-style path that reads:
 
-    [{"messages": [{"role": "user", "content": "..."}, ...]}, ...]
+    {"instruction": "...", "input": "...", "output": "..."}
+
+This script therefore writes those keys, and also keeps a `messages` copy for
+newer chat-oriented loaders.
 """
 
 from __future__ import annotations
@@ -124,6 +126,56 @@ def coerce_messages(row: dict) -> list[dict[str, str]]:
     raise ValueError("row does not expose a supported chat schema")
 
 
+def messages_to_instruction_record(messages: list[dict[str, str]]) -> dict[str, object]:
+    system_parts = []
+    dialogue_parts = []
+
+    for idx, message in enumerate(messages):
+        role = message["role"]
+        content = message["content"].strip()
+        if role == "system":
+            system_parts.append(content)
+            continue
+        if idx == len(messages) - 1:
+            if role != "assistant":
+                raise ValueError("conversation must end with assistant for instruction conversion")
+            output = content
+            break
+        speaker = "User" if role == "user" else "Assistant"
+        dialogue_parts.append(f"{speaker}: {content}")
+    else:
+        raise ValueError("missing final assistant turn")
+
+    first_user = next((m["content"].strip() for m in messages if m["role"] == "user"), None)
+    if first_user is None:
+        raise ValueError("conversation is missing a user turn")
+
+    instruction = first_user
+    if system_parts:
+        instruction = "\n\n".join(system_parts + [instruction])
+
+    remaining_parts = []
+    seen_first_user = False
+    for message in messages:
+        role = message["role"]
+        if role == "system":
+            continue
+        if role == "user" and not seen_first_user:
+            seen_first_user = True
+            continue
+        if role == "assistant" and message["content"].strip() == output and message is messages[-1]:
+            continue
+        speaker = "User" if role == "user" else "Assistant"
+        remaining_parts.append(f"{speaker}: {message['content'].strip()}")
+
+    return {
+        "instruction": instruction,
+        "input": "\n\n".join(remaining_parts),
+        "output": output,
+        "messages": messages,
+    }
+
+
 def convert_jsonl_to_json(source_path: Path, output_path: Path, force: bool, max_rows: int) -> None:
     if output_path.exists() and not force:
         print(f"Using existing prepared dataset: {output_path}")
@@ -152,7 +204,7 @@ def convert_jsonl_to_json(source_path: Path, output_path: Path, force: bool, max
                     print(f"Skipping line {line_number}: {type(exc).__name__}: {exc}")
                 continue
 
-            payload = {"messages": messages}
+            payload = messages_to_instruction_record(messages)
             if not first:
                 out.write(",\n")
             json.dump(payload, out, ensure_ascii=False)
