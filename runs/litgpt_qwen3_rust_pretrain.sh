@@ -37,6 +37,7 @@ NUM_WORKERS="${NUM_WORKERS:-8}"
 ROWS_PER_SHARD="${ROWS_PER_SHARD:-10000}"
 CHUNK_BYTES="${CHUNK_BYTES:-200MB}"
 MAX_SEQ_LENGTH="${MAX_SEQ_LENGTH:-2048}"
+FILES_PER_BATCH="${FILES_PER_BATCH:-8}"
 GLOBAL_BATCH_SIZE="${GLOBAL_BATCH_SIZE:-128}"
 MICRO_BATCH_SIZE="${MICRO_BATCH_SIZE:-1}"
 MAX_TOKENS="${MAX_TOKENS:-500000000}"
@@ -150,6 +151,8 @@ python data/rust/prepare_litgpt_litdata.py \
   --root-dir "$SCRATCH_ROOT" \
   --text-output-dir "$TEXT_DIR" \
   --litdata-output-dir "$LITDATA_DIR" \
+  --num-workers "$NUM_WORKERS" \
+  --files-per-batch "$FILES_PER_BATCH" \
   --rows-per-shard "$ROWS_PER_SHARD" \
   --chunk-bytes "$CHUNK_BYTES" \
   --max-seq-length "$MAX_SEQ_LENGTH"

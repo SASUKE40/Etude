@@ -16,14 +16,22 @@ import argparse
 import json
 import os
 import shutil
+import warnings
 from functools import partial
 from pathlib import Path
+from typing import Any
 
 from datasets import load_dataset
 
 HF_DATASET = "ammarnasr/the-stack-rust-clean"
 DEFAULT_ROWS_PER_SHARD = 10_000
 DEFAULT_SEPARATOR = "\n\n<|endoftext|>\n\n"
+
+warnings.filterwarnings(
+    "ignore",
+    message="transformer_engine module not found!",
+    category=UserWarning,
+)
 
 
 def _default_root() -> Path:
@@ -101,6 +109,18 @@ def _tokenize_file(filename: str, tokenizer) -> object:
     yield tokenizer.encode(text, bos=True, eos=False)
 
 
+def _load_json(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def _batched(items: list[str], batch_size: int) -> list[list[str]]:
+    return [items[i : i + batch_size] for i in range(0, len(items), batch_size)]
+
+
 def _optimize_split(
     input_dir: Path,
     output_dir: Path,
@@ -108,6 +128,7 @@ def _optimize_split(
     max_seq_length: int,
     chunk_bytes: str,
     num_workers: int,
+    files_per_batch: int,
     overwrite: bool,
 ) -> dict[str, int]:
     from litdata import optimize
@@ -118,24 +139,71 @@ def _optimize_split(
     if not text_files:
         raise FileNotFoundError(f"No .txt files found in {input_dir}")
 
-    if output_dir.exists():
-        if not overwrite:
-            index_files = list(output_dir.glob("index.json"))
-            if index_files:
-                return {"num_input_files": len(text_files), "skipped": 1}
-        shutil.rmtree(output_dir)
+    state_path = output_dir.parent / f"{output_dir.name}_progress.json"
+    completed = set()
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if output_dir.exists() and not overwrite:
+        index_files = list(output_dir.glob("index.json"))
+        if index_files and not state_path.exists():
+            # Backward compatibility with the old all-or-nothing behavior.
+            return {"num_input_files": len(text_files), "skipped": 1, "resumed_batches": 0}
+
+        if state_path.exists():
+            state = _load_json(state_path)
+            completed = set(state.get("completed_inputs", []))
+
+    if overwrite:
+        shutil.rmtree(output_dir)
+        if state_path.exists():
+            state_path.unlink()
+
     tokenizer = Tokenizer(tokenizer_dir)
-    optimize(
-        fn=partial(_tokenize_file, tokenizer=tokenizer),
-        inputs=text_files,
-        output_dir=str(output_dir),
-        num_workers=min(num_workers, len(text_files)),
-        chunk_bytes=chunk_bytes,
-        item_loader=TokensLoader(block_size=max_seq_length + 1),
-    )
-    return {"num_input_files": len(text_files), "skipped": 0}
+    output_dir.parent.mkdir(parents=True, exist_ok=True)
+    pending_files = [path for path in text_files if path not in completed]
+    if not pending_files and output_dir.exists() and state_path.exists():
+        return {
+            "num_input_files": len(text_files),
+            "skipped": 1,
+            "resumed_batches": 0,
+        }
+
+    batches = _batched(pending_files, max(1, files_per_batch))
+    resumed_batches = 0
+
+    for batch_index, batch in enumerate(batches, start=1):
+        mode = "append" if output_dir.exists() and list(output_dir.glob("index.json")) else "overwrite"
+        print(
+            f"Optimizing {output_dir.name} batch {batch_index}/{len(batches)} "
+            f"with {len(batch)} file(s) using mode={mode}"
+        )
+        optimize(
+            fn=partial(_tokenize_file, tokenizer=tokenizer),
+            inputs=batch,
+            output_dir=str(output_dir),
+            num_workers=min(num_workers, len(batch)),
+            chunk_bytes=chunk_bytes,
+            item_loader=TokensLoader(block_size=max_seq_length + 1),
+            mode=mode,
+        )
+        completed.update(batch)
+        _write_json(
+            state_path,
+            {
+                "input_dir": str(input_dir),
+                "output_dir": str(output_dir),
+                "num_input_files": len(text_files),
+                "completed_inputs": sorted(completed),
+                "chunk_bytes": chunk_bytes,
+                "max_seq_length": max_seq_length,
+            },
+        )
+        resumed_batches += 1
+
+    return {
+        "num_input_files": len(text_files),
+        "skipped": 0,
+        "resumed_batches": resumed_batches,
+    }
 
 
 def prepare(args: argparse.Namespace) -> None:
@@ -177,6 +245,7 @@ def prepare(args: argparse.Namespace) -> None:
         max_seq_length=args.max_seq_length,
         chunk_bytes=args.chunk_bytes,
         num_workers=args.num_workers,
+        files_per_batch=args.files_per_batch,
         overwrite=args.overwrite,
     )
 
@@ -188,6 +257,7 @@ def prepare(args: argparse.Namespace) -> None:
         max_seq_length=args.max_seq_length,
         chunk_bytes=args.chunk_bytes,
         num_workers=args.num_workers,
+        files_per_batch=args.files_per_batch,
         overwrite=args.overwrite,
     )
 
@@ -201,6 +271,7 @@ def prepare(args: argparse.Namespace) -> None:
         "rows_per_shard": args.rows_per_shard,
         "chunk_bytes": args.chunk_bytes,
         "max_seq_length": args.max_seq_length,
+        "files_per_batch": args.files_per_batch,
         "splits": {
             "train": {**train_meta, **train_opt_meta},
             "val": {**val_meta, **val_opt_meta},
@@ -229,6 +300,12 @@ if __name__ == "__main__":
     parser.add_argument("--chunk-bytes", type=str, default="200MB")
     parser.add_argument("--max-seq-length", type=int, default=2048)
     parser.add_argument(
+        "--files-per-batch",
+        type=int,
+        default=8,
+        help="Number of text shards to process per resumable LitData optimize call",
+    )
+    parser.add_argument(
         "--num-workers",
         type=int,
         default=max(1, (os.cpu_count() or 2) - 1),
@@ -240,5 +317,7 @@ if __name__ == "__main__":
         raise ValueError("--rows-per-shard must be greater than 0")
     if parsed.max_seq_length <= 0:
         raise ValueError("--max-seq-length must be greater than 0")
+    if parsed.files_per_batch <= 0:
+        raise ValueError("--files-per-batch must be greater than 0")
 
     prepare(parsed)
