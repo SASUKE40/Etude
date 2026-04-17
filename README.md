@@ -528,6 +528,13 @@ python scripts/litgpt_infer_checkpoint.py chat \
   --base-checkpoint-dir /scratch/$USER/litgpt-checkpoints/Qwen/Qwen3-0.6B
 ```
 
+If you exported a checkpoint into a self-contained folder, you can also use the
+helper script:
+
+```bash
+bash runs/chat_litgpt_export.sh /scratch/zhu.shili/exports/qwen3-0.6b-rust
+```
+
 That launcher will:
 
 - download the LitGPT-compatible `Qwen/Qwen3-0.6B` checkpoint
