@@ -10,6 +10,7 @@ This script makes LitGPT checkpoint directories easier to use on clusters where:
 from __future__ import annotations
 
 import argparse
+import re
 import warnings
 from pathlib import Path
 
@@ -43,7 +44,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--precision", type=str, default=None)
     parser.add_argument("--quantize", type=str, default=None)
     parser.add_argument("--compile", action="store_true")
-    parser.add_argument("--max-new-tokens", type=int, default=50)
+    parser.add_argument(
+        "--context-length",
+        type=int,
+        default=20000,
+        help=(
+            "Override LitGPT's `block_size` in model_config.yaml for inference "
+            "(default: 20000). This controls the maximum prompt + generated tokens."
+        ),
+    )
+    parser.add_argument(
+        "--max-new-tokens",
+        type=int,
+        default=512,
+        help="Maximum number of tokens to generate per response (default: 512).",
+    )
     parser.add_argument("--top-k", type=int, default=50)
     parser.add_argument("--top-p", type=float, default=1.0)
     parser.add_argument("--temperature", type=float, default=0.8)
@@ -60,7 +75,36 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _prepare_checkpoint_dir(checkpoint_dir: Path, base_checkpoint_dir: Path) -> None:
+def _override_context_length(checkpoint_dir: Path, context_length: int) -> None:
+    if context_length <= 0:
+        raise ValueError(f"context length must be positive, got {context_length}")
+
+    model_config_path = checkpoint_dir / "model_config.yaml"
+    if not model_config_path.is_file():
+        raise FileNotFoundError(f"Missing LitGPT model config at {model_config_path}")
+
+    original_text = model_config_path.read_text()
+    updated_text, replacements = re.subn(
+        r"^(\s*block_size:\s*)\d+(\s*)$",
+        rf"\g<1>{context_length}\g<2>",
+        original_text,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    if replacements != 1:
+        raise ValueError(f"Could not find `block_size` in {model_config_path}")
+    if updated_text == original_text:
+        return
+
+    # If the config is symlinked from the base checkpoint, replace it locally so the
+    # override only applies to this inference checkpoint directory.
+    if model_config_path.is_symlink():
+        model_config_path.unlink()
+    model_config_path.write_text(updated_text)
+    print(f"Overrode LitGPT context length to {context_length} tokens in {model_config_path}")
+
+
+def _prepare_checkpoint_dir(checkpoint_dir: Path, base_checkpoint_dir: Path, context_length: int | None = None) -> None:
     checkpoint_dir = checkpoint_dir.expanduser().resolve()
     base_checkpoint_dir = base_checkpoint_dir.expanduser().resolve()
     checkpoint_path = checkpoint_dir / "lit_model.pth"
@@ -79,6 +123,8 @@ def _prepare_checkpoint_dir(checkpoint_dir: Path, base_checkpoint_dir: Path) -> 
         linked.append(filename)
     if linked:
         print(f"Linked checkpoint metadata into {checkpoint_dir}: {', '.join(linked)}")
+    if context_length is not None:
+        _override_context_length(checkpoint_dir, context_length)
 
 
 def _configure_runtime(allow_cudnn_sdp: bool) -> None:
@@ -98,7 +144,7 @@ def _configure_runtime(allow_cudnn_sdp: bool) -> None:
 
 def main() -> None:
     args = parse_args()
-    _prepare_checkpoint_dir(args.checkpoint_dir, args.base_checkpoint_dir)
+    _prepare_checkpoint_dir(args.checkpoint_dir, args.base_checkpoint_dir, context_length=args.context_length)
     _configure_runtime(args.allow_cudnn_sdp)
 
     checkpoint_dir = args.checkpoint_dir.expanduser().resolve()
