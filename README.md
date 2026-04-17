@@ -478,19 +478,21 @@ That Slurm launcher defaults to:
 So rerunning the same `sbatch` command will continue from the latest checkpoint
 in the output directory when one exists.
 
-To test a saved LitGPT checkpoint, point `litgpt chat` or `litgpt generate`
-at the checkpoint directory itself, not the `lit_model.pth` file:
+To test a saved LitGPT checkpoint on this cluster, use the wrapper script
+instead of the raw `litgpt chat` CLI. It links the missing tokenizer/config
+files from the base Qwen checkpoint into the step directory and disables cuDNN
+SDPA by default to avoid `CUDNN_STATUS_NOT_INITIALIZED` during inference:
 
 ```bash
-litgpt chat /scratch/$USER/litgpt-rust-qwen3/out/qwen3-0.6b-rust/step-00000100 \
-  --tokenizer_dir /scratch/$USER/litgpt-checkpoints/Qwen/Qwen3-0.6B
+python scripts/litgpt_infer_checkpoint.py chat \
+  /scratch/$USER/litgpt-rust-qwen3/out/qwen3-0.6b-rust/step-00000100
 ```
 
 For plain completion-style prompting:
 
 ```bash
-litgpt generate /scratch/$USER/litgpt-rust-qwen3/out/qwen3-0.6b-rust/step-00000100 \
-  --tokenizer_dir /scratch/$USER/litgpt-checkpoints/Qwen/Qwen3-0.6B \
+python scripts/litgpt_infer_checkpoint.py generate \
+  /scratch/$USER/litgpt-rust-qwen3/out/qwen3-0.6b-rust/step-00000100 \
   --prompt "Write a Rust function that parses a TOML file."
 ```
 
@@ -498,7 +500,14 @@ To grab the newest checkpoint automatically:
 
 ```bash
 LATEST="$(ls -td /scratch/$USER/litgpt-rust-qwen3/out/qwen3-0.6b-rust/step-* | head -1)"
-litgpt chat "$LATEST" --tokenizer_dir /scratch/$USER/litgpt-checkpoints/Qwen/Qwen3-0.6B
+python scripts/litgpt_infer_checkpoint.py chat "$LATEST"
+```
+
+If your base LitGPT checkpoint lives somewhere else, override it explicitly:
+
+```bash
+python scripts/litgpt_infer_checkpoint.py chat "$LATEST" \
+  --base-checkpoint-dir /scratch/$USER/litgpt-checkpoints/Qwen/Qwen3-0.6B
 ```
 
 That launcher will:
