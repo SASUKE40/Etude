@@ -134,10 +134,49 @@ def _install_mfu_metric_alias() -> None:
         metrics = original_compute(self)
         if "device/mfu" in metrics and "mfu" not in metrics:
             metrics["mfu"] = metrics["device/mfu"]
+        alias_map = {
+            "throughput/device/batches_per_sec": "batches_per_sec",
+            "throughput/device/samples_per_sec": "samples_per_sec",
+            "throughput/device/items_per_sec": "items_per_sec",
+            "throughput/device/flops_per_sec": "flops_per_sec",
+            "device/batches_per_sec": "batches_per_sec",
+            "device/samples_per_sec": "samples_per_sec",
+            "device/items_per_sec": "items_per_sec",
+            "device/flops_per_sec": "flops_per_sec",
+            "device/tokens_per_sec": "tokens_per_sec",
+            "throughput/device/tokens_per_sec": "tokens_per_sec",
+        }
+        for source_key, alias_key in alias_map.items():
+            if source_key in metrics and alias_key not in metrics:
+                metrics[alias_key] = metrics[source_key]
         return metrics
 
     compute_with_alias._etude_mfu_alias = True
     ThroughputMonitor.compute = compute_with_alias
+
+
+def _install_log_dict_metric_aliases() -> None:
+    import lightning as L
+
+    original_log_dict = L.Fabric.log_dict
+    if getattr(L.Fabric.log_dict, "_etude_metric_aliases", False):
+        return
+
+    def log_dict_with_aliases(self, metrics, *args, **kwargs):
+        aliased = dict(metrics)
+        if "total_tokens" in aliased and "percent_of_token_budget" not in aliased:
+            max_tokens = getattr(self, "_etude_max_tokens", None)
+            if isinstance(max_tokens, int) and max_tokens > 0:
+                aliased["percent_of_token_budget"] = 100.0 * aliased["total_tokens"] / max_tokens
+        if "iter_time" in aliased and "tokens" in aliased and "tokens_per_sec" not in aliased:
+            iter_time = aliased["iter_time"]
+            tokens = aliased["tokens"]
+            if isinstance(iter_time, (int, float)) and iter_time > 0 and isinstance(tokens, (int, float)):
+                aliased["tokens_per_sec"] = tokens / iter_time
+        return original_log_dict(self, aliased, *args, **kwargs)
+
+    log_dict_with_aliases._etude_metric_aliases = True
+    L.Fabric.log_dict = log_dict_with_aliases
 
 
 def main() -> None:
@@ -151,6 +190,7 @@ def main() -> None:
         print("Disabled cuDNN SDPA for stability; using alternate SDPA backends.")
 
     _install_mfu_metric_alias()
+    _install_log_dict_metric_aliases()
 
     train_args = TrainArgs(
         save_interval=args.save_interval,
@@ -192,6 +232,9 @@ def main() -> None:
         initial_checkpoint_dir = args.initial_checkpoint_dir or args.tokenizer_dir
 
     with _compile_backend(args.compiler):
+        import lightning as L
+
+        L.Fabric._etude_max_tokens = args.max_tokens
         litgpt_pretrain(
             model_name=args.model_name,
             out_dir=args.out_dir,
