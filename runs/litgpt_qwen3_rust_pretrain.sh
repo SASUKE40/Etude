@@ -63,6 +63,11 @@ from importlib import metadata
 from packaging.version import Version
 import sys
 
+def base_version(value):
+    if value is None:
+        return None
+    return value.split("+", 1)[0]
+
 def version_or_none(name):
     try:
         return metadata.version(name)
@@ -93,17 +98,17 @@ elif Version(hub_version) >= Version("1.4"):
     )
 if torch_version is None:
     errors.append("torch is not installed")
-elif Version(torch_version) != Version("2.9.1"):
+elif base_version(torch_version) != "2.9.1":
     errors.append(f"torch=={torch_version} does not match the tested install here; use torch==2.9.1")
 if torchvision_version is None:
     errors.append("torchvision is not installed")
-elif Version(torchvision_version) != Version("0.24.1"):
+elif base_version(torchvision_version) != "0.24.1":
     errors.append(
         f"torchvision=={torchvision_version} does not match torch==2.9.1; use torchvision==0.24.1"
     )
 if torchaudio_version is None:
     errors.append("torchaudio is not installed")
-elif Version(torchaudio_version) != Version("2.9.1"):
+elif base_version(torchaudio_version) != "2.9.1":
     errors.append(
         f"torchaudio=={torchaudio_version} does not match torch==2.9.1; use torchaudio==2.9.1"
     )
