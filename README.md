@@ -456,6 +456,18 @@ WANDB_RUN=qwen3-rust-h100 SAVE_INTERVAL=100 sbatch runs/litgpt_qwen3_rust_resume
 OUT_DIR=/scratch/$USER/litgpt-rust-qwen3/out/debug MAX_STEPS=100 sbatch runs/litgpt_qwen3_rust_resume.slurm
 ```
 
+To find the newest LitGPT Slurm logs:
+
+```bash
+ls -t runs/litgpt-rust-*.log | head
+```
+
+To follow the live LitGPT Slurm logs:
+
+```bash
+tail -f runs/litgpt-rust-*.log
+```
+
 That Slurm launcher defaults to:
 
 - `PHASE=train`

@@ -113,6 +113,16 @@ def _has_existing_checkpoint(out_dir: Path) -> bool:
     return any(out_dir.rglob("lit_model.pth"))
 
 
+def _normalize_devices(value: str | int) -> str | int:
+    if isinstance(value, int):
+        return value
+    if value == "auto":
+        return value
+    if value.isdigit():
+        return int(value)
+    return value
+
+
 def main() -> None:
     args = parse_args()
     import torch
@@ -173,7 +183,7 @@ def main() -> None:
             train=train_args,
             eval=eval_args,
             tokenizer_dir=args.tokenizer_dir,
-            devices=args.devices,
+            devices=_normalize_devices(args.devices),
             num_nodes=args.num_nodes,
             logger_name=args.logger_name,
             log=log_args,
