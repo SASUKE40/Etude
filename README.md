@@ -535,6 +535,19 @@ helper script:
 bash runs/chat_litgpt_export.sh /scratch/zhu.shili/exports/qwen3-0.6b-rust
 ```
 
+To watch the LitGPT full-SFT Slurm job and auto-resubmit if it hits the time
+limit, use:
+
+```bash
+bash runs/watch_slurm_time_limit.sh litgpt-sft
+```
+
+To just follow the newest SFT log live:
+
+```bash
+tail -f "$(ls -t runs/litgpt-sft-*.log | head -1)"
+```
+
 That launcher will:
 
 - download the LitGPT-compatible `Qwen/Qwen3-0.6B` checkpoint
@@ -661,7 +674,7 @@ To automatically resubmit when Slurm kills the job for hitting the time limit, r
 bash runs/watch_slurm_time_limit.sh d24-h100
 ```
 
-The known prefixes are `d24-h100`, `d24-h200`, `d24-rust`, `d24-sft`, and `litgpt-rust`. The watcher auto-detects the newest matching `runs/<prefix>-<job_id>.log` file by modification time, infers the matching `sbatch` script, and keeps following each newly resumed Slurm log until you stop it. If no matching log exists yet, it waits for the first one to appear. You can still pass an explicit log file or `sbatch` file:
+The known prefixes are `d24-h100`, `d24-h200`, `d24-rust`, `d24-sft`, `litgpt-rust`, and `litgpt-sft`. The watcher auto-detects the newest matching `runs/<prefix>-<job_id>.log` file by modification time, infers the matching `sbatch` script, and keeps following each newly resumed Slurm log until you stop it. If no matching log exists yet, it waits for the first one to appear. You can still pass an explicit log file or `sbatch` file:
 
 ```bash
 bash runs/watch_slurm_time_limit.sh runs/d24-h100-<job_id>.log runs/d24_h100_resume.slurm
