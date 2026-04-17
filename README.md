@@ -478,6 +478,29 @@ That Slurm launcher defaults to:
 So rerunning the same `sbatch` command will continue from the latest checkpoint
 in the output directory when one exists.
 
+To test a saved LitGPT checkpoint, point `litgpt chat` or `litgpt generate`
+at the checkpoint directory itself, not the `lit_model.pth` file:
+
+```bash
+litgpt chat /scratch/$USER/litgpt-rust-qwen3/out/qwen3-0.6b-rust/step-00000100 \
+  --tokenizer_dir /scratch/$USER/litgpt-checkpoints/Qwen/Qwen3-0.6B
+```
+
+For plain completion-style prompting:
+
+```bash
+litgpt generate /scratch/$USER/litgpt-rust-qwen3/out/qwen3-0.6b-rust/step-00000100 \
+  --tokenizer_dir /scratch/$USER/litgpt-checkpoints/Qwen/Qwen3-0.6B \
+  --prompt "Write a Rust function that parses a TOML file."
+```
+
+To grab the newest checkpoint automatically:
+
+```bash
+LATEST="$(ls -td /scratch/$USER/litgpt-rust-qwen3/out/qwen3-0.6b-rust/step-* | head -1)"
+litgpt chat "$LATEST" --tokenizer_dir /scratch/$USER/litgpt-checkpoints/Qwen/Qwen3-0.6B
+```
+
 That launcher will:
 
 - download the LitGPT-compatible `Qwen/Qwen3-0.6B` checkpoint
