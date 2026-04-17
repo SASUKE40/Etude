@@ -58,6 +58,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--initial-checkpoint-dir", type=Path, default=None)
     parser.add_argument("--out-dir", type=Path, default=scratch_root / "litgpt-rust-qwen3" / "out" / "qwen3-0.6b-rust")
+    parser.add_argument(
+        "--resume",
+        type=str,
+        default="auto",
+        help="Resume mode: auto, true, false, or an explicit checkpoint path.",
+    )
     parser.add_argument("--precision", type=str, default="bf16-true")
     parser.add_argument("--devices", type=str, default="auto")
     parser.add_argument("--num-nodes", type=int, default=1)
@@ -86,6 +92,25 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--train-from-scratch", action="store_true")
     return parser.parse_args()
+
+
+def _coerce_resume(value: str | None) -> bool | str | Path:
+    if value is None:
+        return "auto"
+    lowered = value.lower()
+    if lowered == "auto":
+        return "auto"
+    if lowered == "true":
+        return True
+    if lowered == "false":
+        return False
+    return Path(value)
+
+
+def _has_existing_checkpoint(out_dir: Path) -> bool:
+    if not out_dir.exists():
+        return False
+    return any(out_dir.rglob("lit_model.pth"))
 
 
 def main() -> None:
@@ -124,8 +149,17 @@ def main() -> None:
         seed=args.seed,
     )
 
+    resume = _coerce_resume(args.resume)
     initial_checkpoint_dir = None
-    if not args.train_from_scratch:
+    if args.train_from_scratch:
+        resume = False
+    elif resume == "auto":
+        if _has_existing_checkpoint(args.out_dir):
+            initial_checkpoint_dir = None
+        else:
+            resume = False
+            initial_checkpoint_dir = args.initial_checkpoint_dir or args.tokenizer_dir
+    elif resume is False:
         initial_checkpoint_dir = args.initial_checkpoint_dir or args.tokenizer_dir
 
     with _compile_backend(args.compiler):
@@ -134,6 +168,7 @@ def main() -> None:
             out_dir=args.out_dir,
             precision=args.precision,
             initial_checkpoint_dir=initial_checkpoint_dir,
+            resume=resume,
             data=data,
             train=train_args,
             eval=eval_args,

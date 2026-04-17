@@ -57,6 +57,7 @@ MAX_NORM="${MAX_NORM:-1.0}"
 LOGGER_NAME="${LOGGER_NAME:-wandb}"
 PROJECT="${PROJECT:-$WANDB_PROJECT}"
 RUN_NAME="${RUN_NAME:-$WANDB_RUN}"
+RESUME="${RESUME:-auto}"
 PHASE="${PHASE:-${1:-all}}"
 
 mkdir -p "$HF_HOME" "$HF_DATASETS_CACHE" "$CHECKPOINT_ROOT" "$SCRATCH_ROOT"
@@ -198,6 +199,7 @@ run_train() {
     --num-workers "$NUM_WORKERS"
     --compiler "$COMPILER"
     --logger-name "$LOGGER_NAME"
+    --resume "$RESUME"
     --seed 42
     --global-batch-size "$GLOBAL_BATCH_SIZE"
     --micro-batch-size "$MICRO_BATCH_SIZE"

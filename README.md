@@ -442,6 +442,30 @@ MAX_TOKENS=100000000 MICRO_BATCH_SIZE=2 bash runs/litgpt_qwen3_rust_pretrain.sh 
 The default phase is `all`, which runs prepare and train in sequence. You can
 also select the phase with `PHASE=prepare` or `PHASE=train`.
 
+For a single-H100 Slurm workflow with 1-hour jobs, use the dedicated resumable
+training launcher after the prepare phase is complete:
+
+```bash
+sbatch runs/litgpt_qwen3_rust_resume.slurm
+```
+
+Useful overrides:
+
+```bash
+WANDB_RUN=qwen3-rust-h100 SAVE_INTERVAL=100 sbatch runs/litgpt_qwen3_rust_resume.slurm
+OUT_DIR=/scratch/$USER/litgpt-rust-qwen3/out/debug MAX_STEPS=100 sbatch runs/litgpt_qwen3_rust_resume.slurm
+```
+
+That Slurm launcher defaults to:
+
+- `PHASE=train`
+- `RESUME=auto`
+- `COMPILER=none`
+- `SAVE_INTERVAL=100`
+
+So rerunning the same `sbatch` command will continue from the latest checkpoint
+in the output directory when one exists.
+
 That launcher will:
 
 - download the LitGPT-compatible `Qwen/Qwen3-0.6B` checkpoint
