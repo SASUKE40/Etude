@@ -488,6 +488,13 @@ python scripts/litgpt_infer_checkpoint.py chat \
   /scratch/$USER/litgpt-rust-qwen3/out/qwen3-0.6b-rust/step-00000100
 ```
 
+Example on the current cluster:
+
+```bash
+python scripts/litgpt_infer_checkpoint.py chat \
+  /scratch/zhu.shili/litgpt-rust-qwen3/out/qwen3-0.6b-rust/step-00000100
+```
+
 For plain completion-style prompting:
 
 ```bash

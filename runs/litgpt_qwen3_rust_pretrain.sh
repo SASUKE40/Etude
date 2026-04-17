@@ -187,41 +187,87 @@ run_train() {
     exit 1
   fi
 
-  CMD=(
-    python scripts/litgpt_qwen3_rust_pretrain.py
-    --model-name "$MODEL_NAME"
-    --data-path "$LITDATA_DIR"
-    --tokenizer-dir "$CHECKPOINT_DIR"
-    --out-dir "$OUT_DIR"
-    --precision "$PRECISION"
-    --devices "$DEVICES"
-    --num-nodes "$NUM_NODES"
-    --num-workers "$NUM_WORKERS"
-    --compiler "$COMPILER"
-    --logger-name "$LOGGER_NAME"
-    --resume "$RESUME"
-    --seed 42
-    --global-batch-size "$GLOBAL_BATCH_SIZE"
-    --micro-batch-size "$MICRO_BATCH_SIZE"
-    --max-seq-length "$MAX_SEQ_LENGTH"
-    --max-tokens "$MAX_TOKENS"
-    --save-interval "$SAVE_INTERVAL"
-    --eval-interval "$EVAL_INTERVAL"
-    --eval-max-iters "$EVAL_MAX_ITERS"
-    --learning-rate "$LEARNING_RATE"
-    --lr-warmup-steps "$LR_WARMUP_STEPS"
-    --max-norm "$MAX_NORM"
-  )
+  TRAIN_SCRIPT="scripts/litgpt_qwen3_rust_pretrain.py"
+  TRAIN_HELP="$(python "$TRAIN_SCRIPT" --help 2>&1 || true)"
 
-  if [[ -n "$MAX_STEPS" ]]; then
-    CMD+=(--max-steps "$MAX_STEPS")
+  CLI_MODE=""
+  if grep -q -- "--model-name" <<<"$TRAIN_HELP"; then
+    CLI_MODE="current"
+    echo "Using current Etude training CLI from $TRAIN_SCRIPT"
+    CMD=(
+      python "$TRAIN_SCRIPT"
+      --model-name "$MODEL_NAME"
+      --data-path "$LITDATA_DIR"
+      --tokenizer-dir "$CHECKPOINT_DIR"
+      --out-dir "$OUT_DIR"
+      --precision "$PRECISION"
+      --devices "$DEVICES"
+      --num-nodes "$NUM_NODES"
+      --num-workers "$NUM_WORKERS"
+      --compiler "$COMPILER"
+      --logger-name "$LOGGER_NAME"
+      --resume "$RESUME"
+      --seed 42
+      --global-batch-size "$GLOBAL_BATCH_SIZE"
+      --micro-batch-size "$MICRO_BATCH_SIZE"
+      --max-seq-length "$MAX_SEQ_LENGTH"
+      --max-tokens "$MAX_TOKENS"
+      --save-interval "$SAVE_INTERVAL"
+      --eval-interval "$EVAL_INTERVAL"
+      --eval-max-iters "$EVAL_MAX_ITERS"
+      --learning-rate "$LEARNING_RATE"
+      --lr-warmup-steps "$LR_WARMUP_STEPS"
+      --max-norm "$MAX_NORM"
+    )
+  elif grep -q -- "model_name" <<<"$TRAIN_HELP"; then
+    CLI_MODE="legacy"
+    echo "Using legacy LitGPT-style training CLI from $TRAIN_SCRIPT"
+    CMD=(
+      python "$TRAIN_SCRIPT"
+      "$MODEL_NAME"
+      --data "$LITDATA_DIR"
+      --tokenizer_dir "$CHECKPOINT_DIR"
+      --out_dir "$OUT_DIR"
+      --precision "$PRECISION"
+      --devices "$DEVICES"
+      --num_nodes "$NUM_NODES"
+      --resume "$RESUME"
+      --seed 42
+      --train.save_interval "$SAVE_INTERVAL"
+      --train.global_batch_size "$GLOBAL_BATCH_SIZE"
+      --train.micro_batch_size "$MICRO_BATCH_SIZE"
+      --train.lr_warmup_steps "$LR_WARMUP_STEPS"
+      --train.max_tokens "$MAX_TOKENS"
+      --train.max_seq_length "$MAX_SEQ_LENGTH"
+      --train.max_norm "$MAX_NORM"
+      --train.min_lr "$LEARNING_RATE"
+      --eval.interval "$EVAL_INTERVAL"
+      --eval.max_iters "$EVAL_MAX_ITERS"
+      --logger_name "$LOGGER_NAME"
+      --log.project "$PROJECT"
+    )
+    if [[ -n "$RUN_NAME" ]]; then
+      CMD+=(--log.run "$RUN_NAME")
+    fi
+  else
+    echo "Could not determine supported CLI for $TRAIN_SCRIPT" >&2
+    echo "$TRAIN_HELP" >&2
+    exit 1
   fi
 
-  if [[ -n "$PROJECT" ]]; then
+  if [[ -n "$MAX_STEPS" ]]; then
+    if [[ "$CLI_MODE" == "current" ]]; then
+      CMD+=(--max-steps "$MAX_STEPS")
+    else
+      CMD+=(--train.max_steps "$MAX_STEPS")
+    fi
+  fi
+
+  if [[ -n "$PROJECT" && "$CLI_MODE" == "current" ]]; then
     CMD+=(--project "$PROJECT")
   fi
 
-  if [[ -n "$RUN_NAME" ]]; then
+  if [[ -n "$RUN_NAME" && "$CLI_MODE" == "current" ]]; then
     CMD+=(--run-name "$RUN_NAME")
   fi
 
