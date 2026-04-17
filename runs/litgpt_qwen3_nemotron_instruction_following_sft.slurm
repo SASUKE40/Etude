@@ -21,7 +21,7 @@
 #SBATCH --gres=gpu:h100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=120GB
-#SBATCH --time=12:00:00
+#SBATCH --time=1:00:00
 #SBATCH --output=runs/litgpt-sft-%j.log
 
 set -euo pipefail
