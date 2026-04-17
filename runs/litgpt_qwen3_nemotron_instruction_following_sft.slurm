@@ -202,6 +202,7 @@ print(f"Staged LitGPT checkpoint in {staged_checkpoint_dir}")
 PY
 
 python - <<'PY'
+import json
 import os
 from pathlib import Path
 
@@ -218,6 +219,7 @@ try:
 except ImportError:
     from litgpt.data.json_data import JSON
 
+import litgpt.finetune.full as litgpt_full_module
 from litgpt.args import EvalArgs, LogArgs, TrainArgs
 
 checkpoint_dir = Path(os.environ["STAGED_CHECKPOINT_DIR"]).expanduser().resolve()
@@ -255,6 +257,51 @@ log_args = LogArgs(
     run=os.environ.get("WANDB_RUN") or None,
     group=os.environ.get("WANDB_GROUP") or None,
 )
+
+
+def save_hyperparameters(_function, checkpoint_dir: Path, known_commands=None) -> None:
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "checkpoint_dir": str(checkpoint_dir),
+        "base_checkpoint_dir": str(Path(os.environ["STAGED_CHECKPOINT_DIR"]).expanduser().resolve()),
+        "out_dir": str(out_dir),
+        "precision": os.environ["PRECISION"],
+        "devices": devices,
+        "num_nodes": int(os.environ["NUM_NODES"]),
+        "resume": os.environ["RESUME"],
+        "data": {
+            "class_path": "litgpt.data.JSON",
+            "init_args": {
+                "json_path": str(json_path),
+                "val_split_fraction": float(os.environ["VAL_SPLIT_FRACTION"]),
+            },
+        },
+        "train": {
+            "save_interval": int(os.environ["SAVE_INTERVAL"]),
+            "log_interval": int(os.environ["LOG_INTERVAL"]),
+            "global_batch_size": int(os.environ["GLOBAL_BATCH_SIZE"]),
+            "micro_batch_size": int(os.environ["MICRO_BATCH_SIZE"]),
+            "epochs": int(os.environ["TRAIN_EPOCHS"]),
+            "max_steps": train_max_steps,
+            "max_seq_length": int(os.environ["MAX_SEQ_LENGTH"]),
+        },
+        "eval": {
+            "interval": int(os.environ["EVAL_INTERVAL"]),
+            "max_new_tokens": int(os.environ["EVAL_MAX_NEW_TOKENS"]),
+            "max_iters": int(os.environ["EVAL_MAX_ITERS"]),
+        },
+        "log": {
+            "project": os.environ.get("WANDB_PROJECT") or None,
+            "run": os.environ.get("WANDB_RUN") or None,
+            "group": os.environ.get("WANDB_GROUP") or None,
+        },
+        "logger_name": os.environ["LOGGER_NAME"],
+        "seed": int(os.environ["SEED"]),
+    }
+    (checkpoint_dir / "hyperparameters.yaml").write_text(json.dumps(payload, indent=2) + "\n")
+
+
+litgpt_full_module.save_hyperparameters = save_hyperparameters
 
 print("Launching LitGPT full finetune")
 print(f"  checkpoint_dir={checkpoint_dir}")
