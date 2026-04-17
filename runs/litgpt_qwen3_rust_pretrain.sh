@@ -13,7 +13,10 @@
 #
 # Usage:
 #   bash runs/litgpt_qwen3_rust_pretrain.sh
-#   MAX_TOKENS=100000000 MICRO_BATCH_SIZE=2 bash runs/litgpt_qwen3_rust_pretrain.sh
+#   bash runs/litgpt_qwen3_rust_pretrain.sh prepare
+#   bash runs/litgpt_qwen3_rust_pretrain.sh train
+#   PHASE=prepare bash runs/litgpt_qwen3_rust_pretrain.sh
+#   MAX_TOKENS=100000000 MICRO_BATCH_SIZE=2 bash runs/litgpt_qwen3_rust_pretrain.sh train
 
 set -euo pipefail
 
@@ -51,6 +54,7 @@ MAX_NORM="${MAX_NORM:-1.0}"
 LOGGER_NAME="${LOGGER_NAME:-tensorboard}"
 PROJECT="${PROJECT:-}"
 RUN_NAME="${RUN_NAME:-}"
+PHASE="${PHASE:-${1:-all}}"
 
 mkdir -p "$HF_HOME" "$HF_DATASETS_CACHE" "$CHECKPOINT_ROOT" "$SCRATCH_ROOT"
 
@@ -141,60 +145,94 @@ except Exception as exc:
     sys.exit(1)
 PY
 
-echo "=== Downloading LitGPT checkpoint ==="
-litgpt download "$MODEL_NAME" --checkpoint_dir "$CHECKPOINT_ROOT"
+run_prepare() {
+  echo "=== Downloading LitGPT checkpoint ==="
+  litgpt download "$MODEL_NAME" --checkpoint_dir "$CHECKPOINT_ROOT"
 
-echo ""
-echo "=== Preparing LitData dataset ==="
-python data/rust/prepare_litgpt_litdata.py \
-  --tokenizer-dir "$CHECKPOINT_DIR" \
-  --root-dir "$SCRATCH_ROOT" \
-  --text-output-dir "$TEXT_DIR" \
-  --litdata-output-dir "$LITDATA_DIR" \
-  --num-workers "$NUM_WORKERS" \
-  --files-per-batch "$FILES_PER_BATCH" \
-  --rows-per-shard "$ROWS_PER_SHARD" \
-  --chunk-bytes "$CHUNK_BYTES" \
-  --max-seq-length "$MAX_SEQ_LENGTH"
+  echo ""
+  echo "=== Preparing LitData dataset ==="
+  python data/rust/prepare_litgpt_litdata.py \
+    --tokenizer-dir "$CHECKPOINT_DIR" \
+    --root-dir "$SCRATCH_ROOT" \
+    --text-output-dir "$TEXT_DIR" \
+    --litdata-output-dir "$LITDATA_DIR" \
+    --num-workers "$NUM_WORKERS" \
+    --files-per-batch "$FILES_PER_BATCH" \
+    --rows-per-shard "$ROWS_PER_SHARD" \
+    --chunk-bytes "$CHUNK_BYTES" \
+    --max-seq-length "$MAX_SEQ_LENGTH"
+}
 
-echo ""
-echo "=== Starting LitGPT continued pretraining ==="
+run_train() {
+  echo "=== Starting LitGPT continued pretraining ==="
 
-CMD=(
-  python scripts/litgpt_qwen3_rust_pretrain.py
-  --model-name "$MODEL_NAME"
-  --data-path "$LITDATA_DIR"
-  --tokenizer-dir "$CHECKPOINT_DIR"
-  --out-dir "$OUT_DIR"
-  --precision "$PRECISION"
-  --devices "$DEVICES"
-  --num-nodes "$NUM_NODES"
-  --num-workers "$NUM_WORKERS"
-  --compiler "$COMPILER"
-  --logger-name "$LOGGER_NAME"
-  --seed 42
-  --global-batch-size "$GLOBAL_BATCH_SIZE"
-  --micro-batch-size "$MICRO_BATCH_SIZE"
-  --max-seq-length "$MAX_SEQ_LENGTH"
-  --max-tokens "$MAX_TOKENS"
-  --save-interval "$SAVE_INTERVAL"
-  --eval-interval "$EVAL_INTERVAL"
-  --eval-max-iters "$EVAL_MAX_ITERS"
-  --learning-rate "$LEARNING_RATE"
-  --lr-warmup-steps "$LR_WARMUP_STEPS"
-  --max-norm "$MAX_NORM"
-)
+  if [[ ! -d "$CHECKPOINT_DIR" ]]; then
+    echo "Missing checkpoint directory: $CHECKPOINT_DIR" >&2
+    echo "Run the prepare phase first: bash runs/litgpt_qwen3_rust_pretrain.sh prepare" >&2
+    exit 1
+  fi
 
-if [[ -n "$MAX_STEPS" ]]; then
-  CMD+=(--max-steps "$MAX_STEPS")
-fi
+  if [[ ! -d "$LITDATA_DIR/train" || ! -d "$LITDATA_DIR/val" ]]; then
+    echo "Missing LitData dataset under $LITDATA_DIR" >&2
+    echo "Run the prepare phase first: bash runs/litgpt_qwen3_rust_pretrain.sh prepare" >&2
+    exit 1
+  fi
 
-if [[ -n "$PROJECT" ]]; then
-  CMD+=(--project "$PROJECT")
-fi
+  CMD=(
+    python scripts/litgpt_qwen3_rust_pretrain.py
+    --model-name "$MODEL_NAME"
+    --data-path "$LITDATA_DIR"
+    --tokenizer-dir "$CHECKPOINT_DIR"
+    --out-dir "$OUT_DIR"
+    --precision "$PRECISION"
+    --devices "$DEVICES"
+    --num-nodes "$NUM_NODES"
+    --num-workers "$NUM_WORKERS"
+    --compiler "$COMPILER"
+    --logger-name "$LOGGER_NAME"
+    --seed 42
+    --global-batch-size "$GLOBAL_BATCH_SIZE"
+    --micro-batch-size "$MICRO_BATCH_SIZE"
+    --max-seq-length "$MAX_SEQ_LENGTH"
+    --max-tokens "$MAX_TOKENS"
+    --save-interval "$SAVE_INTERVAL"
+    --eval-interval "$EVAL_INTERVAL"
+    --eval-max-iters "$EVAL_MAX_ITERS"
+    --learning-rate "$LEARNING_RATE"
+    --lr-warmup-steps "$LR_WARMUP_STEPS"
+    --max-norm "$MAX_NORM"
+  )
 
-if [[ -n "$RUN_NAME" ]]; then
-  CMD+=(--run-name "$RUN_NAME")
-fi
+  if [[ -n "$MAX_STEPS" ]]; then
+    CMD+=(--max-steps "$MAX_STEPS")
+  fi
 
-"${CMD[@]}"
+  if [[ -n "$PROJECT" ]]; then
+    CMD+=(--project "$PROJECT")
+  fi
+
+  if [[ -n "$RUN_NAME" ]]; then
+    CMD+=(--run-name "$RUN_NAME")
+  fi
+
+  "${CMD[@]}"
+}
+
+case "$PHASE" in
+  all)
+    run_prepare
+    echo ""
+    run_train
+    ;;
+  prepare)
+    run_prepare
+    ;;
+  train)
+    run_train
+    ;;
+  *)
+    echo "Unknown phase: $PHASE" >&2
+    echo "Expected one of: all, prepare, train" >&2
+    exit 1
+    ;;
+esac

@@ -428,6 +428,20 @@ Then run:
 bash runs/litgpt_qwen3_rust_pretrain.sh
 ```
 
+For Slurm or other time-limited environments, it is better to split the
+workflow into separate prepare and train phases:
+
+```bash
+# CPU / I/O-heavy one-time data preparation
+NUM_WORKERS=8 FILES_PER_BATCH=8 bash runs/litgpt_qwen3_rust_pretrain.sh prepare
+
+# GPU training after the LitData dataset already exists
+MAX_TOKENS=100000000 MICRO_BATCH_SIZE=2 bash runs/litgpt_qwen3_rust_pretrain.sh train
+```
+
+The default phase is `all`, which runs prepare and train in sequence. You can
+also select the phase with `PHASE=prepare` or `PHASE=train`.
+
 That launcher will:
 
 - download the LitGPT-compatible `Qwen/Qwen3-0.6B` checkpoint
