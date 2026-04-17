@@ -23,6 +23,13 @@ def _compile_backend(name: str):
     import torch
 
     original_compile = torch.compile
+    if name == "none":
+        torch.compile = lambda model, *args, **kwargs: model
+        try:
+            yield
+        finally:
+            torch.compile = original_compile
+        return
     if name == "torch":
         yield
         return
@@ -54,7 +61,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--devices", type=str, default="auto")
     parser.add_argument("--num-nodes", type=int, default=1)
     parser.add_argument("--num-workers", type=int, default=8)
-    parser.add_argument("--compiler", choices=("thunder", "torch"), default="torch")
+    parser.add_argument("--compiler", choices=("none", "thunder", "torch"), default="none")
     parser.add_argument("--logger-name", type=str, default="tensorboard")
     parser.add_argument("--project", type=str, default=None)
     parser.add_argument("--run-name", type=str, default=None)
