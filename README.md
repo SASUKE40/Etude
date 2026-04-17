@@ -517,6 +517,17 @@ python scripts/litgpt_infer_checkpoint.py chat "$LATEST" \
   --base-checkpoint-dir /scratch/$USER/litgpt-checkpoints/Qwen/Qwen3-0.6B
 ```
 
+To chat with a full-SFT checkpoint produced by
+`runs/litgpt_qwen3_nemotron_instruction_following_sft.slurm`, point the wrapper
+at the saved `out/step-*` directory and provide the base Qwen checkpoint for
+tokenizer/config metadata:
+
+```bash
+python scripts/litgpt_infer_checkpoint.py chat \
+  /scratch/$USER/litgpt-nemotron-sft/qwen3-0.6b-rust-step-00001800-nemotron-instruction-following/out/step-000700 \
+  --base-checkpoint-dir /scratch/$USER/litgpt-checkpoints/Qwen/Qwen3-0.6B
+```
+
 That launcher will:
 
 - download the LitGPT-compatible `Qwen/Qwen3-0.6B` checkpoint
