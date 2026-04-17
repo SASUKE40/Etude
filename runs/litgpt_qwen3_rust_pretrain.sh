@@ -227,6 +227,7 @@ run_train() {
   export ETUDE_ALLOW_CUDNN_SDP="${ALLOW_CUDNN_SDP:-0}"
 
   python - <<'PY'
+import json
 import os
 import sys
 from contextlib import contextmanager
@@ -338,6 +339,86 @@ def install_metric_aliases(max_tokens: int) -> None:
         L.Fabric.log_dict = log_dict_with_aliases
 
 
+def install_checkpoint_hparam_saver(
+    *,
+    model_name: str,
+    data_path: Path,
+    tokenizer_dir: Path,
+    out_dir: Path,
+    precision: str,
+    resume,
+    num_workers: int,
+    seed: int,
+    save_interval: int,
+    log_interval: int,
+    global_batch_size: int,
+    micro_batch_size: int,
+    max_tokens: int,
+    max_steps,
+    max_seq_length: int,
+    max_norm: float,
+    learning_rate: float,
+    lr_warmup_steps: int,
+    eval_interval: int,
+    eval_max_iters: int,
+    project: str,
+    run_name,
+    devices,
+    num_nodes: int,
+    logger_name: str,
+) -> None:
+    import litgpt.pretrain as litgpt_pretrain_module
+
+    def save_hyperparameters(_function, checkpoint_dir: Path, known_commands=None) -> None:
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "model_name": model_name,
+            "out_dir": str(out_dir),
+            "precision": precision,
+            "initial_checkpoint_dir": str(tokenizer_dir) if resume is False else None,
+            "resume": str(resume),
+            "data": {
+                "class_path": "litgpt.data.LitData",
+                "init_args": {
+                    "data_path": str(data_path),
+                    "split_names": ["train", "val"],
+                    "num_workers": num_workers,
+                    "seed": seed,
+                },
+            },
+            "train": {
+                "save_interval": save_interval,
+                "log_interval": log_interval,
+                "global_batch_size": global_batch_size,
+                "micro_batch_size": micro_batch_size,
+                "max_tokens": max_tokens,
+                "max_steps": max_steps,
+                "max_seq_length": max_seq_length,
+                "max_norm": max_norm,
+                "min_lr": learning_rate,
+                "lr_warmup_steps": lr_warmup_steps,
+            },
+            "eval": {
+                "interval": eval_interval,
+                "max_iters": eval_max_iters,
+                "initial_validation": False,
+                "final_validation": True,
+            },
+            "log": {
+                "project": project,
+                "run": run_name,
+            },
+            "devices": devices,
+            "num_nodes": num_nodes,
+            "tokenizer_dir": str(tokenizer_dir),
+            "logger_name": logger_name,
+            "seed": seed,
+        }
+        (checkpoint_dir / "hyperparameters.yaml").write_text(json.dumps(payload, indent=2) + "\n")
+
+    litgpt_pretrain_module.save_hyperparameters = save_hyperparameters
+
+
 model_name = os.environ["ETUDE_MODEL_NAME"]
 data_path = Path(os.environ["ETUDE_LITDATA_DIR"])
 tokenizer_dir = Path(os.environ["ETUDE_CHECKPOINT_DIR"])
@@ -373,6 +454,33 @@ if os.environ.get("ETUDE_ALLOW_CUDNN_SDP", "0") != "1" and torch.cuda.is_availab
     print("Disabled cuDNN SDPA for stability; using alternate SDPA backends.")
 
 install_metric_aliases(max_tokens)
+install_checkpoint_hparam_saver(
+    model_name=model_name,
+    data_path=data_path,
+    tokenizer_dir=tokenizer_dir,
+    out_dir=out_dir,
+    precision=precision,
+    resume=resume,
+    num_workers=num_workers,
+    seed=42,
+    save_interval=save_interval,
+    log_interval=log_interval,
+    global_batch_size=global_batch_size,
+    micro_batch_size=micro_batch_size,
+    max_tokens=max_tokens,
+    max_steps=max_steps,
+    max_seq_length=max_seq_length,
+    max_norm=max_norm,
+    learning_rate=learning_rate,
+    lr_warmup_steps=lr_warmup_steps,
+    eval_interval=eval_interval,
+    eval_max_iters=eval_max_iters,
+    project=project,
+    run_name=run_name,
+    devices=devices,
+    num_nodes=num_nodes,
+    logger_name=logger_name,
+)
 
 train_args = TrainArgs(
     save_interval=save_interval,

@@ -10,6 +10,7 @@ to `thunder.compile`.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from contextlib import contextmanager
 from pathlib import Path
@@ -212,6 +213,61 @@ def _install_log_dict_metric_aliases() -> None:
     L.Fabric.log_dict = log_dict_with_aliases
 
 
+def _install_checkpoint_hparam_saver(args: argparse.Namespace) -> None:
+    import litgpt.pretrain as litgpt_pretrain_module
+
+    def save_hyperparameters(_function, checkpoint_dir: Path, known_commands=None) -> None:
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "model_name": args.model_name,
+            "out_dir": str(args.out_dir),
+            "precision": args.precision,
+            "initial_checkpoint_dir": (
+                str(args.initial_checkpoint_dir) if args.initial_checkpoint_dir is not None else None
+            ),
+            "resume": str(args.resume),
+            "data": {
+                "class_path": "litgpt.data.LitData",
+                "init_args": {
+                    "data_path": str(args.data_path),
+                    "split_names": ["train", "val"],
+                    "num_workers": args.num_workers,
+                    "seed": args.seed,
+                },
+            },
+            "train": {
+                "save_interval": args.save_interval,
+                "log_interval": args.log_interval,
+                "global_batch_size": args.global_batch_size,
+                "micro_batch_size": args.micro_batch_size,
+                "max_tokens": args.max_tokens,
+                "max_steps": args.max_steps,
+                "max_seq_length": args.max_seq_length,
+                "max_norm": args.max_norm,
+                "min_lr": args.learning_rate,
+                "lr_warmup_steps": args.lr_warmup_steps,
+            },
+            "eval": {
+                "interval": args.eval_interval,
+                "max_iters": args.eval_max_iters,
+                "initial_validation": False,
+                "final_validation": True,
+            },
+            "log": {
+                "project": args.project,
+                "run": args.run_name,
+            },
+            "devices": _normalize_devices(args.devices),
+            "num_nodes": args.num_nodes,
+            "tokenizer_dir": str(args.tokenizer_dir),
+            "logger_name": args.logger_name,
+            "seed": args.seed,
+        }
+        (checkpoint_dir / "hyperparameters.yaml").write_text(json.dumps(payload, indent=2) + "\n")
+
+    litgpt_pretrain_module.save_hyperparameters = save_hyperparameters
+
+
 def main() -> None:
     args = parse_args()
     from litgpt.args import EvalArgs, LogArgs, TrainArgs
@@ -228,6 +284,7 @@ def main() -> None:
 
     _install_mfu_metric_alias()
     _install_log_dict_metric_aliases()
+    _install_checkpoint_hparam_saver(args)
 
     train_args = TrainArgs(
         save_interval=args.save_interval,
