@@ -24,5 +24,4 @@ fi
 
 python scripts/litgpt_infer_checkpoint.py chat \
   "$CHECKPOINT_DIR" \
-  --base-checkpoint-dir "$BASE_CHECKPOINT_DIR" \
-  --multiline
+  --base-checkpoint-dir "$BASE_CHECKPOINT_DIR"
