@@ -176,8 +176,32 @@ def messages_to_instruction_record(messages: list[dict[str, str]]) -> dict[str, 
     }
 
 
+def output_has_required_schema(output_path: Path) -> bool:
+    if not output_path.exists():
+        return False
+    try:
+        with open(output_path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+    except Exception as exc:
+        print(f"Existing prepared dataset is unreadable, rebuilding {output_path}: {exc}")
+        return False
+
+    if not isinstance(payload, list) or not payload:
+        print(f"Existing prepared dataset is empty or not a JSON list, rebuilding {output_path}")
+        return False
+
+    first = payload[0]
+    required_keys = {"instruction", "input", "output"}
+    if not isinstance(first, dict) or not required_keys.issubset(first):
+        print(
+            f"Existing prepared dataset is missing keys {sorted(required_keys)}, rebuilding {output_path}"
+        )
+        return False
+    return True
+
+
 def convert_jsonl_to_json(source_path: Path, output_path: Path, force: bool, max_rows: int) -> None:
-    if output_path.exists() and not force:
+    if output_path.exists() and not force and output_has_required_schema(output_path):
         print(f"Using existing prepared dataset: {output_path}")
         return
 
