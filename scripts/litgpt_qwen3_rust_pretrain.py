@@ -54,7 +54,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--devices", type=str, default="auto")
     parser.add_argument("--num-nodes", type=int, default=1)
     parser.add_argument("--num-workers", type=int, default=8)
-    parser.add_argument("--compiler", choices=("thunder", "torch"), default="thunder")
+    parser.add_argument("--compiler", choices=("thunder", "torch"), default="torch")
     parser.add_argument("--logger-name", type=str, default="tensorboard")
     parser.add_argument("--project", type=str, default=None)
     parser.add_argument("--run-name", type=str, default=None)
@@ -71,12 +71,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--learning-rate", type=float, default=2e-5)
     parser.add_argument("--lr-warmup-steps", type=int, default=200)
     parser.add_argument("--max-norm", type=float, default=1.0)
+    parser.add_argument(
+        "--allow-cudnn-sdp",
+        action="store_true",
+        help="Keep cuDNN SDPA enabled. Disabled by default to avoid CUDNN_STATUS_NOT_INITIALIZED on some clusters.",
+    )
     parser.add_argument("--train-from-scratch", action="store_true")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    import torch
+
+    if not args.allow_cudnn_sdp and torch.cuda.is_available():
+        torch.backends.cuda.enable_cudnn_sdp(False)
+        torch.backends.cuda.enable_flash_sdp(True)
+        torch.backends.cuda.enable_mem_efficient_sdp(True)
+        print("Disabled cuDNN SDPA for stability; using alternate SDPA backends.")
 
     train_args = TrainArgs(
         save_interval=args.save_interval,
