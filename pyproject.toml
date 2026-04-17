@@ -26,9 +26,9 @@ dependencies = [
     "tabulate>=0.9.0",
     "tiktoken>=0.11.0",
     "tokenizers>=0.22.0",
-    "torch==2.5.1",
-    "torchaudio==2.5.1",
-    "torchvision==0.20.1",
+    "torch==2.7.1",
+    "torchaudio==2.7.1",
+    "torchvision==0.22.1",
     "transformers>=4.51.3,<4.57",
     "uvicorn>=0.36.0",
     "wandb>=0.21.3",
@@ -49,19 +49,20 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 
-# target torch to CUDA 12.1 wheels or CPU
+# target torch to official PyTorch CUDA wheels or CPU.
+# PyTorch 2.7.1 does not ship a cu123 wheel; use cu118 on CUDA 12.3 drivers.
 [tool.uv.sources]
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
-    { index = "pytorch-cu121", extra = "gpu" },
+    { index = "pytorch-cu118", extra = "gpu" },
 ]
 torchvision = [
     { index = "pytorch-cpu", extra = "cpu" },
-    { index = "pytorch-cu121", extra = "gpu" },
+    { index = "pytorch-cu118", extra = "gpu" },
 ]
 torchaudio = [
     { index = "pytorch-cpu", extra = "cpu" },
-    { index = "pytorch-cu121", extra = "gpu" },
+    { index = "pytorch-cu118", extra = "gpu" },
 ]
 
 [[tool.uv.index]]
@@ -70,20 +71,20 @@ url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [[tool.uv.index]]
-name = "pytorch-cu121"
-url = "https://download.pytorch.org/whl/cu121"
+name = "pytorch-cu118"
+url = "https://download.pytorch.org/whl/cu118"
 explicit = true
 
 [project.optional-dependencies]
 cpu = [
-    "torch==2.5.1",
-    "torchvision==0.20.1",
-    "torchaudio==2.5.1",
+    "torch==2.7.1",
+    "torchvision==0.22.1",
+    "torchaudio==2.7.1",
 ]
 gpu = [
-    "torch==2.5.1",
-    "torchvision==0.20.1",
-    "torchaudio==2.5.1",
+    "torch==2.7.1",
+    "torchvision==0.22.1",
+    "torchaudio==2.7.1",
 ]
 
 [tool.uv]
