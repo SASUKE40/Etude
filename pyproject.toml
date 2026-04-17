@@ -5,7 +5,7 @@ description = "the minimal full-stack ChatGPT clone"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "datasets>=4.0.0",
+    "datasets>=2.18,<4",
     "fastapi>=0.117.1",
     "ipykernel>=7.1.0",
     "flash-attn-4>=4.0.0b4",
