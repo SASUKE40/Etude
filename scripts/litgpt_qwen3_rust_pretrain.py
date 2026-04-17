@@ -10,6 +10,7 @@ to `thunder.compile`.
 from __future__ import annotations
 
 import argparse
+import os
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -62,9 +63,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num-nodes", type=int, default=1)
     parser.add_argument("--num-workers", type=int, default=8)
     parser.add_argument("--compiler", choices=("none", "thunder", "torch"), default="none")
-    parser.add_argument("--logger-name", type=str, default="tensorboard")
-    parser.add_argument("--project", type=str, default=None)
-    parser.add_argument("--run-name", type=str, default=None)
+    parser.add_argument("--logger-name", type=str, default="wandb")
+    parser.add_argument("--project", type=str, default=os.environ.get("WANDB_PROJECT", "etude"))
+    parser.add_argument("--run-name", type=str, default=os.environ.get("WANDB_RUN"))
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--global-batch-size", type=int, default=128)
     parser.add_argument("--micro-batch-size", type=int, default=1)
