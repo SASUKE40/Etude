@@ -20,6 +20,10 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$REPO_ROOT"
+
 export HF_HOME="${HF_HOME:-/scratch/$USER/hf_cache}"
 export HF_DATASETS_CACHE="${HF_DATASETS_CACHE:-$HF_HOME/datasets}"
 export HF_HUB_ENABLE_HF_TRANSFER="${HF_HUB_ENABLE_HF_TRANSFER:-1}"
@@ -160,7 +164,7 @@ run_prepare() {
 
   echo ""
   echo "=== Preparing LitData dataset ==="
-  python data/rust/prepare_litgpt_litdata.py \
+  python "$REPO_ROOT/data/rust/prepare_litgpt_litdata.py" \
     --tokenizer-dir "$CHECKPOINT_DIR" \
     --root-dir "$SCRATCH_ROOT" \
     --text-output-dir "$TEXT_DIR" \
@@ -187,7 +191,9 @@ run_train() {
     exit 1
   fi
 
-  TRAIN_SCRIPT="scripts/litgpt_qwen3_rust_pretrain.py"
+  TRAIN_SCRIPT="$REPO_ROOT/scripts/litgpt_qwen3_rust_pretrain.py"
+  echo "Repo root: $REPO_ROOT"
+  echo "Training script: $TRAIN_SCRIPT"
   TRAIN_HELP="$(python "$TRAIN_SCRIPT" --help 2>&1 || true)"
 
   CLI_MODE=""

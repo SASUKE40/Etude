@@ -20,6 +20,10 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$REPO_ROOT"
+
 module load cuda/12.8 cuDNN/9.10.2
 
 export OMP_NUM_THREADS=1
@@ -69,4 +73,7 @@ export LOGGER_NAME="${LOGGER_NAME:-wandb}"
 export PROJECT="${PROJECT:-$WANDB_PROJECT}"
 export RUN_NAME="${RUN_NAME:-$WANDB_RUN}"
 
-bash runs/litgpt_qwen3_rust_pretrain.sh train
+echo "Repo root: $REPO_ROOT"
+echo "Submitting train phase via: $REPO_ROOT/runs/litgpt_qwen3_rust_pretrain.sh"
+
+bash "$REPO_ROOT/runs/litgpt_qwen3_rust_pretrain.sh" train
