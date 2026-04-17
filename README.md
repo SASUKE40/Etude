@@ -478,6 +478,18 @@ That Slurm launcher defaults to:
 So rerunning the same `sbatch` command will continue from the latest checkpoint
 in the output directory when one exists.
 
+To chat with Qwen3 directly through LitGPT using the Hugging Face model ID:
+
+```bash
+litgpt chat Qwen/Qwen3-0.6B
+```
+
+If you want the raw base model instead of the chat/post-trained checkpoint:
+
+```bash
+litgpt chat Qwen/Qwen3-0.6B-Base
+```
+
 To test a saved LitGPT checkpoint on this cluster, use the wrapper script
 instead of the raw `litgpt chat` CLI. It links the missing tokenizer/config
 files from the base Qwen checkpoint into the step directory and disables cuDNN
