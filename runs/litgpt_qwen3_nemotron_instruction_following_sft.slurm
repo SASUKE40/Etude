@@ -207,6 +207,8 @@ out_dir = Path(os.environ["OUT_DIR"]).expanduser().resolve()
 
 train_max_steps_raw = os.environ.get("TRAIN_MAX_STEPS", "").strip()
 train_max_steps = int(train_max_steps_raw) if train_max_steps_raw else None
+devices_raw = os.environ["DEVICES"].strip()
+devices = devices_raw if devices_raw == "auto" else int(devices_raw)
 
 data = JSON(
     json_path=json_path,
@@ -234,7 +236,7 @@ print(f"  checkpoint_dir={checkpoint_dir}")
 print(f"  json_path={json_path}")
 print(f"  out_dir={out_dir}")
 print(f"  precision={os.environ['PRECISION']}")
-print(f"  devices={os.environ['DEVICES']}")
+print(f"  devices={devices}")
 print(f"  epochs={os.environ['TRAIN_EPOCHS']}")
 print(f"  max_steps={train_max_steps}")
 
@@ -242,7 +244,7 @@ full_setup(
     checkpoint_dir=checkpoint_dir,
     out_dir=out_dir,
     precision=os.environ["PRECISION"],
-    devices=os.environ["DEVICES"],
+    devices=devices,
     num_nodes=int(os.environ["NUM_NODES"]),
     data=data,
     train=train,
