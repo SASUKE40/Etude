@@ -123,6 +123,23 @@ def _normalize_devices(value: str | int) -> str | int:
     return value
 
 
+def _install_mfu_metric_alias() -> None:
+    from lightning.fabric.utilities.throughput import ThroughputMonitor
+
+    original_compute = ThroughputMonitor.compute
+    if getattr(ThroughputMonitor.compute, "_etude_mfu_alias", False):
+        return
+
+    def compute_with_alias(self):
+        metrics = original_compute(self)
+        if "device/mfu" in metrics and "mfu" not in metrics:
+            metrics["mfu"] = metrics["device/mfu"]
+        return metrics
+
+    compute_with_alias._etude_mfu_alias = True
+    ThroughputMonitor.compute = compute_with_alias
+
+
 def main() -> None:
     args = parse_args()
     import torch
@@ -132,6 +149,8 @@ def main() -> None:
         torch.backends.cuda.enable_flash_sdp(True)
         torch.backends.cuda.enable_mem_efficient_sdp(True)
         print("Disabled cuDNN SDPA for stability; using alternate SDPA backends.")
+
+    _install_mfu_metric_alias()
 
     train_args = TrainArgs(
         save_interval=args.save_interval,
