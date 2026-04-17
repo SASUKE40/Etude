@@ -34,7 +34,14 @@ export WANDB_PROJECT="${WANDB_PROJECT:-etude}"
 export WANDB_ENTITY="${WANDB_ENTITY:-edward40}"
 export WANDB_RUN="${WANDB_RUN:-qwen3-rust-h100}"
 
-source .venv/bin/activate
+VENV_DIR="${VENV_DIR:-$REPO_ROOT/.venv}"
+if [[ -f "$VENV_DIR/bin/activate" ]]; then
+  echo "Activating virtualenv: $VENV_DIR"
+  # shellcheck disable=SC1090
+  source "$VENV_DIR/bin/activate"
+else
+  echo "Virtualenv not found at $VENV_DIR; using current Python environment"
+fi
 
 SCRATCH_ROOT="${SCRATCH_ROOT:-/scratch/$USER/litgpt-rust-qwen3}"
 CHECKPOINT_ROOT="${CHECKPOINT_ROOT:-/scratch/$USER/litgpt-checkpoints}"
