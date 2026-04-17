@@ -1,5 +1,5 @@
 #!/bin/bash
-# LitGPT chat finetune launcher for Qwen3-0.6B continued-pretraining checkpoints.
+# LitGPT full-parameter chat finetune launcher for Qwen3-0.6B continued-pretraining checkpoints.
 #
 # Default source checkpoint:
 #   /scratch/zhu.shili/litgpt-rust-qwen3/out/qwen3-0.6b-rust/step-00001800
@@ -11,7 +11,7 @@
 #   sbatch runs/litgpt_qwen3_nemotron_instruction_following_sft.slurm
 #   SOURCE_STEP_DIR=/scratch/$USER/litgpt-rust-qwen3/out/qwen3-0.6b-rust/step-00002000 \
 #   RUN_TAG=qwen3-0.6b-rust-step-2000-nemotron-if \
-#   LITGPT_FINETUNE_EXTRA_ARGS="--precision bf16-true" \
+#   PRECISION=bf16-true TRAIN_EPOCHS=3 \
 #   sbatch runs/litgpt_qwen3_nemotron_instruction_following_sft.slurm
 
 #SBATCH --job-name=litgpt-sft
@@ -68,11 +68,43 @@ OUT_DIR="${OUT_DIR:-$WORK_ROOT/out}"
 VAL_SPLIT_FRACTION="${VAL_SPLIT_FRACTION:-0.005}"
 MAX_ROWS="${MAX_ROWS:--1}"
 FORCE_PREPARE="${FORCE_PREPARE:-0}"
-LITGPT_FINETUNE_EXTRA_ARGS="${LITGPT_FINETUNE_EXTRA_ARGS:-}"
+PRECISION="${PRECISION:-bf16-true}"
+DEVICES="${DEVICES:-1}"
+NUM_NODES="${NUM_NODES:-1}"
+TRAIN_EPOCHS="${TRAIN_EPOCHS:-3}"
+TRAIN_MAX_STEPS="${TRAIN_MAX_STEPS:-}"
+GLOBAL_BATCH_SIZE="${GLOBAL_BATCH_SIZE:-16}"
+MICRO_BATCH_SIZE="${MICRO_BATCH_SIZE:-1}"
+MAX_SEQ_LENGTH="${MAX_SEQ_LENGTH:-2048}"
+SAVE_INTERVAL="${SAVE_INTERVAL:-500}"
+LOG_INTERVAL="${LOG_INTERVAL:-1}"
+EVAL_INTERVAL="${EVAL_INTERVAL:-500}"
+EVAL_MAX_ITERS="${EVAL_MAX_ITERS:-50}"
+EVAL_MAX_NEW_TOKENS="${EVAL_MAX_NEW_TOKENS:-100}"
+LOGGER_NAME="${LOGGER_NAME:-csv}"
+SEED="${SEED:-1337}"
 
 export SOURCE_STEP_DIR
 export BASE_CHECKPOINT_DIR
 export STAGED_CHECKPOINT_DIR
+export PREPARED_JSON_PATH
+export OUT_DIR
+export VAL_SPLIT_FRACTION
+export PRECISION
+export DEVICES
+export NUM_NODES
+export TRAIN_EPOCHS
+export TRAIN_MAX_STEPS
+export GLOBAL_BATCH_SIZE
+export MICRO_BATCH_SIZE
+export MAX_SEQ_LENGTH
+export SAVE_INTERVAL
+export LOG_INTERVAL
+export EVAL_INTERVAL
+export EVAL_MAX_ITERS
+export EVAL_MAX_NEW_TOKENS
+export LOGGER_NAME
+export SEED
 
 mkdir -p "$WORK_ROOT" "$WORK_ROOT/data" "$STAGED_CHECKPOINT_DIR" "$OUT_DIR"
 
@@ -150,22 +182,72 @@ python data/nemotron-cascade-sft-stage-2/prepare_litgpt_instruction_following.py
   --output-path "$PREPARED_JSON_PATH" \
   "${PREPARE_ARGS[@]}"
 
-CMD=(
-  litgpt finetune "$STAGED_CHECKPOINT_DIR"
-  --data JSON
-  --data.json_path "$PREPARED_JSON_PATH"
-  --data.val_split_fraction "$VAL_SPLIT_FRACTION"
-  --out_dir "$OUT_DIR"
+python - <<'PY'
+import os
+from pathlib import Path
+
+try:
+    from litgpt.finetune.full import setup as full_setup
+except ImportError as exc:
+    raise SystemExit(
+        "Your installed LitGPT does not expose litgpt.finetune.full. "
+        "Install a LitGPT build that supports full finetuning."
+    ) from exc
+
+try:
+    from litgpt.data import JSON
+except ImportError:
+    from litgpt.data.json_data import JSON
+
+from litgpt.args import EvalArgs, TrainArgs
+
+checkpoint_dir = Path(os.environ["STAGED_CHECKPOINT_DIR"]).expanduser().resolve()
+json_path = Path(os.environ["PREPARED_JSON_PATH"]).expanduser().resolve()
+out_dir = Path(os.environ["OUT_DIR"]).expanduser().resolve()
+
+train_max_steps_raw = os.environ.get("TRAIN_MAX_STEPS", "").strip()
+train_max_steps = int(train_max_steps_raw) if train_max_steps_raw else None
+
+data = JSON(
+    json_path=json_path,
+    val_split_fraction=float(os.environ["VAL_SPLIT_FRACTION"]),
 )
 
-if [[ -n "$LITGPT_FINETUNE_EXTRA_ARGS" ]]; then
-  # Intentional word splitting: this env var is for additional LitGPT CLI args.
-  # shellcheck disable=SC2206
-  EXTRA_ARGS=( $LITGPT_FINETUNE_EXTRA_ARGS )
-  CMD+=("${EXTRA_ARGS[@]}")
-fi
+train = TrainArgs(
+    save_interval=int(os.environ["SAVE_INTERVAL"]),
+    log_interval=int(os.environ["LOG_INTERVAL"]),
+    global_batch_size=int(os.environ["GLOBAL_BATCH_SIZE"]),
+    micro_batch_size=int(os.environ["MICRO_BATCH_SIZE"]),
+    epochs=int(os.environ["TRAIN_EPOCHS"]),
+    max_steps=train_max_steps,
+    max_seq_length=int(os.environ["MAX_SEQ_LENGTH"]),
+)
 
-printf 'Launching:'
-printf ' %q' "${CMD[@]}"
-printf '\n'
-"${CMD[@]}"
+eval_args = EvalArgs(
+    interval=int(os.environ["EVAL_INTERVAL"]),
+    max_new_tokens=int(os.environ["EVAL_MAX_NEW_TOKENS"]),
+    max_iters=int(os.environ["EVAL_MAX_ITERS"]),
+)
+
+print("Launching LitGPT full finetune")
+print(f"  checkpoint_dir={checkpoint_dir}")
+print(f"  json_path={json_path}")
+print(f"  out_dir={out_dir}")
+print(f"  precision={os.environ['PRECISION']}")
+print(f"  devices={os.environ['DEVICES']}")
+print(f"  epochs={os.environ['TRAIN_EPOCHS']}")
+print(f"  max_steps={train_max_steps}")
+
+full_setup(
+    checkpoint_dir=checkpoint_dir,
+    out_dir=out_dir,
+    precision=os.environ["PRECISION"],
+    devices=os.environ["DEVICES"],
+    num_nodes=int(os.environ["NUM_NODES"]),
+    data=data,
+    train=train,
+    eval=eval_args,
+    logger_name=os.environ["LOGGER_NAME"],
+    seed=int(os.environ["SEED"]),
+)
+PY
