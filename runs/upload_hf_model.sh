@@ -40,13 +40,18 @@ export REPO_TYPE
 
 python - <<'PY'
 import os
-from huggingface_hub import login, upload_folder
+from huggingface_hub import HfFolder, login, upload_folder
 
 token = os.environ.get("HF_TOKEN")
 if token:
-    login(token=token)
+    login(token=token, add_to_git_credential=False)
 else:
-    login()
+    saved_token = HfFolder.get_token()
+    if not saved_token:
+        raise SystemExit(
+            "HF_TOKEN is not set and no cached Hugging Face login was found.\n"
+            "Run `huggingface-cli login` first or re-run with `HF_TOKEN=... bash runs/upload_hf_model.sh`."
+        )
 
 upload_folder(
     folder_path=os.environ["CHECKPOINT_DIR"],
