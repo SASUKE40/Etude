@@ -584,6 +584,30 @@ That workflow writes under:
 /scratch/$USER/litgpt-strandset-rust-sft/qwen3-0.6b-rust-step-00001800-strandset-rust-v1
 ```
 
+The Slurm log for:
+
+```bash
+sbatch runs/litgpt_qwen3_strandset_rust_sft.slurm
+```
+
+will be written to:
+
+```bash
+runs/litgpt-strand-sft-<jobid>.log
+```
+
+To follow the newest Strandset SFT log live:
+
+```bash
+tail -f "$(ls -t runs/litgpt-strand-sft-*.log | head -1)"
+```
+
+To auto-resubmit that job family when it hits the time limit:
+
+```bash
+bash runs/watch_slurm_time_limit.sh litgpt-strand-sft
+```
+
 That launcher will:
 
 - download the LitGPT-compatible `Qwen/Qwen3-0.6B` checkpoint
