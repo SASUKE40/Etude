@@ -601,6 +601,74 @@ litgpt chat /scratch/$USER/litgpt-strandset-rust-sft/qwen3-0.6b-rust-step-000018
   --max_new_tokens 10000
 ```
 
+If you want to point at the final `model.pth` file directly instead of the
+checkpoint directory, use the wrapper:
+
+```bash
+bash runs/chat_strandset_final_model.sh
+```
+
+Or call the inference helper directly with a `model.pth` path:
+
+```bash
+python scripts/litgpt_infer_checkpoint.py chat \
+  /scratch/$USER/litgpt-strandset-rust-sft/qwen3-0.6b-rust-step-00001800-strandset-rust-v1/out/final/model.pth
+```
+
+To chat with the same checkpoint through Hugging Face Transformers, use:
+
+```bash
+python scripts/chat_transformers_from_litgpt.py \
+  /scratch/$USER/litgpt-strandset-rust-sft/qwen3-0.6b-rust-step-00001800-strandset-rust-v1/out/final/model.pth
+```
+
+That script converts the LitGPT checkpoint to a Hugging Face checkpoint on
+demand and then loads it with `AutoTokenizer` and `AutoModelForCausalLM`. If
+you already have a converted checkpoint directory, pass it explicitly to skip
+conversion:
+
+```bash
+python scripts/chat_transformers_from_litgpt.py \
+  /scratch/$USER/litgpt-strandset-rust-sft/qwen3-0.6b-rust-step-00001800-strandset-rust-v1/out/final/model.pth \
+  --hf-dir /scratch/$USER/litgpt-strandset-rust-sft/qwen3-0.6b-rust-step-00001800-strandset-rust-v1/out/final/hf
+```
+
+To convert a LitGPT checkpoint into a Hugging Face checkpoint directory:
+
+```bash
+bash runs/convert_litgpt_to_hf.sh \
+  /scratch/$USER/litgpt-strandset-rust-sft/qwen3-0.6b-rust-step-00001800-strandset-rust-v1/out/final \
+  /scratch/$USER/litgpt-strandset-rust-sft/qwen3-0.6b-rust-step-00001800-strandset-rust-v1/out/final/hf
+```
+
+To upload the raw LitGPT final checkpoint folder to the Hub:
+
+```bash
+hf auth login
+bash runs/upload_hf_model.sh \
+  /scratch/$USER/litgpt-strandset-rust-sft/qwen3-0.6b-rust-step-00001800-strandset-rust-v1/out/final \
+  Edward40/etude
+```
+
+To upload the converted Hugging Face checkpoint directory instead:
+
+```bash
+hf auth login
+bash runs/upload_hf_transformers_model.sh \
+  /scratch/$USER/litgpt-strandset-rust-sft/qwen3-0.6b-rust-step-00001800-strandset-rust-v1/out/final/hf \
+  Edward40/etude
+```
+
+To upload a single `model.pth` file, for example a converted step checkpoint:
+
+```bash
+hf auth login
+bash runs/upload_hf_model_pth.sh \
+  /scratch/$USER/litgpt-strandset-rust-sft/qwen3-0.6b-rust-step-00001800-strandset-rust-v1/out/step-003200/hf/model.pth \
+  Edward40/etude \
+  checkpoints/step-003200/model.pth
+```
+
 The Slurm log for:
 
 ```bash
