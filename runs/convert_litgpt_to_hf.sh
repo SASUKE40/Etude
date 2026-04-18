@@ -54,7 +54,7 @@ metadata_files = (
 checkpoint_dir = Path(os.environ["CHECKPOINT_DIR"]).expanduser().resolve()
 output_dir = Path(os.environ["OUTPUT_DIR"]).expanduser().resolve()
 base_checkpoint_dir = Path(os.environ["BASE_CHECKPOINT_DIR"]).expanduser().resolve()
-lit_weights_path = checkpoint_dir / "model.pth"
+lit_weights_path = checkpoint_dir / "lit_model.pth"
 
 if not lit_weights_path.is_file():
     raise SystemExit(f"ERROR: missing LitGPT weights at {lit_weights_path}")
