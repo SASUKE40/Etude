@@ -10,6 +10,7 @@ with `AutoModelForCausalLM` and `AutoTokenizer`.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -125,6 +126,17 @@ def build_messages(system_prompt: str | None, user_prompt: str) -> list[dict[str
     return messages
 
 
+def extract_response_text(text: str) -> str:
+    text = text.strip()
+    response_match = re.search(r"### Response:\s*(.*)", text, flags=re.DOTALL)
+    if response_match:
+        return response_match.group(1).strip()
+    assistant_match = re.search(r"<\|im_start\|>assistant\s*(.*)", text, flags=re.DOTALL)
+    if assistant_match:
+        return assistant_match.group(1).strip()
+    return text
+
+
 def main() -> None:
     args = parse_args()
     checkpoint_path = args.checkpoint_path.expanduser().resolve()
@@ -177,7 +189,7 @@ def main() -> None:
 
         generated = output[0, inputs["input_ids"].shape[1] :]
         text = tokenizer.decode(generated, skip_special_tokens=True)
-        print(text.strip())
+        print(extract_response_text(text))
 
 
 if __name__ == "__main__":
