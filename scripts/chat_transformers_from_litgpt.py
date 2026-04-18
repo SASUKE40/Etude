@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 
 def parse_args() -> argparse.Namespace:
@@ -63,6 +63,45 @@ def has_hf_checkpoint(hf_dir: Path) -> bool:
         )
     )
 
+
+def load_model(hf_dir: Path, dtype_name: str, device: str):
+    model_pth = hf_dir / "model.pth"
+    dtype = resolve_dtype(dtype_name)
+
+    if model_pth.is_file():
+        config = AutoConfig.from_pretrained(hf_dir, trust_remote_code=True)
+        model = AutoModelForCausalLM.from_config(
+            config,
+            trust_remote_code=True,
+            dtype=dtype,
+        )
+        state_dict = torch.load(model_pth, map_location="cpu")
+        if isinstance(state_dict, dict) and "state_dict" in state_dict and isinstance(state_dict["state_dict"], dict):
+            state_dict = state_dict["state_dict"]
+        missing, unexpected = model.load_state_dict(state_dict, strict=False)
+        if missing:
+            raise SystemExit(
+                f"Missing weights when loading {model_pth}: {missing[:10]}"
+                + (" ..." if len(missing) > 10 else "")
+            )
+        if unexpected:
+            raise SystemExit(
+                f"Unexpected weights when loading {model_pth}: {unexpected[:10]}"
+                + (" ..." if len(unexpected) > 10 else "")
+            )
+        model.to(device)
+        model.eval()
+        return model
+
+    model = AutoModelForCausalLM.from_pretrained(
+        hf_dir,
+        dtype=dtype,
+        trust_remote_code=True,
+    )
+    model.to(device)
+    model.eval()
+    return model
+
 def resolve_dtype(dtype_name: str) -> torch.dtype | str:
     if dtype_name == "auto":
         return "auto"
@@ -96,13 +135,7 @@ def main() -> None:
         raise SystemExit(f"Checkpoint path does not exist: {checkpoint_path}")
 
     tokenizer = AutoTokenizer.from_pretrained(hf_dir, trust_remote_code=True)
-    model = AutoModelForCausalLM.from_pretrained(
-        hf_dir,
-        torch_dtype=resolve_dtype(args.dtype),
-        trust_remote_code=True,
-    )
-    model.to(args.device)
-    model.eval()
+    model = load_model(hf_dir, args.dtype, args.device)
 
     print(f"Loaded Transformers checkpoint from {hf_dir}", file=sys.stderr)
     print("Type /exit to quit.", file=sys.stderr)
