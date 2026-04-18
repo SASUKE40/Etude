@@ -26,6 +26,7 @@ from datasets import load_dataset
 
 
 HF_DATASET = "Fortytwo-Network/Strandset-Rust-v1"
+TARGET_TASK_CATEGORY = "code_generation"
 
 
 def parse_args() -> argparse.Namespace:
@@ -95,61 +96,27 @@ def parse_structured_field(value):
 
 
 def build_instruction(row: dict) -> str:
+    task_category = str(row.get("task_category") or "").strip()
+    if task_category != TARGET_TASK_CATEGORY:
+        raise ValueError(f"unsupported task_category: {task_category!r}")
+
     input_data = parse_structured_field(row.get("input_data"))
     title = str(input_data.get("title") or "").strip()
-    description = str(input_data.get("description") or "").strip()
-    task_category = str(row.get("task_category") or "").strip()
-    crate_name = str(row.get("crate_name") or "").strip()
-    code = str(input_data.get("code") or "").strip()
-
-    parts = []
-    if task_category:
-        parts.append(f"Task category: {task_category}")
-    if crate_name:
-        parts.append(f"Crate: {crate_name}")
-    if title:
-        parts.append(f"Title: {title}")
-    if description:
-        parts.append(f"Description: {description}")
-    if code:
-        parts.append("Given code:\n" + code)
-    if not parts:
-        raise ValueError("row is missing instruction content")
-    return "\n".join(parts)
+    if not title:
+        raise ValueError("row is missing input_data.title")
+    return title
 
 
 def build_input(row: dict) -> str:
-    input_data = parse_structured_field(row.get("input_data"))
-    parts = []
-    code_context = str(input_data.get("code_context") or "").strip()
-    function_signature = str(input_data.get("function_signature") or "").strip()
-    if code_context:
-        parts.append(f"Code context:\n{code_context}")
-    if function_signature:
-        parts.append(f"Function signature:\n{function_signature}")
-    return "\n\n".join(parts)
+    return ""
 
 
 def build_output(row: dict) -> str:
     output_data = parse_structured_field(row.get("output_data"))
-    for key in (
-        "code",
-        "commented_code",
-        "answer",
-        "output",
-        "result",
-        "text",
-    ):
-        code = str(output_data.get(key) or "").strip()
-        if code:
-            return code
-    if isinstance(row.get("output_data"), str) and row["output_data"].strip():
-        code = row["output_data"].strip()
-        if code:
-            return code
-    if not output_data:
+    code = str(output_data.get("code") or "").strip()
+    if not code:
         raise ValueError("row is missing output_data.code")
-    raise ValueError(f"row output_data does not contain a supported output key: {sorted(output_data)}")
+    return code
 
 
 def row_to_record(row: dict) -> dict[str, object]:
@@ -209,6 +176,7 @@ def convert_to_json(output_path: Path, force: bool, max_rows: int) -> None:
         json.dumps(
             {
                 "hf_dataset": HF_DATASET,
+                "task_category": TARGET_TASK_CATEGORY,
                 "output_path": str(output_path),
                 "kept": kept,
                 "skipped": skipped,
