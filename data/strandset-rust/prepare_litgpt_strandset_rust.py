@@ -13,6 +13,7 @@ chat-oriented loaders.
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import sys
 from pathlib import Path
@@ -75,12 +76,31 @@ def output_has_required_schema(output_path: Path) -> bool:
     return True
 
 
+def parse_structured_field(value):
+    if isinstance(value, dict):
+        return value
+    if not isinstance(value, str):
+        return {}
+    text = value.strip()
+    if not text:
+        return {}
+    for parser in (json.loads, ast.literal_eval):
+        try:
+            parsed = parser(text)
+        except Exception:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return {}
+
+
 def build_instruction(row: dict) -> str:
-    input_data = row.get("input_data") or {}
+    input_data = parse_structured_field(row.get("input_data"))
     title = str(input_data.get("title") or "").strip()
     description = str(input_data.get("description") or "").strip()
     task_category = str(row.get("task_category") or "").strip()
     crate_name = str(row.get("crate_name") or "").strip()
+    code = str(input_data.get("code") or "").strip()
 
     parts = []
     if task_category:
@@ -91,13 +111,15 @@ def build_instruction(row: dict) -> str:
         parts.append(f"Title: {title}")
     if description:
         parts.append(f"Description: {description}")
+    if code:
+        parts.append("Given code:\n" + code)
     if not parts:
         raise ValueError("row is missing instruction content")
     return "\n".join(parts)
 
 
 def build_input(row: dict) -> str:
-    input_data = row.get("input_data") or {}
+    input_data = parse_structured_field(row.get("input_data"))
     parts = []
     code_context = str(input_data.get("code_context") or "").strip()
     function_signature = str(input_data.get("function_signature") or "").strip()
@@ -109,11 +131,25 @@ def build_input(row: dict) -> str:
 
 
 def build_output(row: dict) -> str:
-    output_data = row.get("output_data") or {}
-    code = str(output_data.get("code") or "").strip()
-    if not code:
+    output_data = parse_structured_field(row.get("output_data"))
+    for key in (
+        "code",
+        "commented_code",
+        "answer",
+        "output",
+        "result",
+        "text",
+    ):
+        code = str(output_data.get(key) or "").strip()
+        if code:
+            return code
+    if isinstance(row.get("output_data"), str) and row["output_data"].strip():
+        code = row["output_data"].strip()
+        if code:
+            return code
+    if not output_data:
         raise ValueError("row is missing output_data.code")
-    return code
+    raise ValueError(f"row output_data does not contain a supported output key: {sorted(output_data)}")
 
 
 def row_to_record(row: dict) -> dict[str, object]:
