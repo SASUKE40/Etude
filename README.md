@@ -587,6 +587,7 @@ That workflow writes under:
 To chat directly with a saved Strandset-Rust SFT checkpoint through LitGPT:
 
 ```bash
+srun --partition=sharing --gres=gpu:h100:1 --pty bash
 litgpt chat /scratch/$USER/litgpt-strandset-rust-sft/qwen3-0.6b-rust-step-00001800-strandset-rust-v1/out/step-000100 \
   --max_new_tokens 10000
 ```
@@ -595,6 +596,7 @@ After training completes, the self-contained final checkpoint can be loaded
 directly as well:
 
 ```bash
+srun --partition=sharing --gres=gpu:h100:1 --pty bash
 litgpt chat /scratch/$USER/litgpt-strandset-rust-sft/qwen3-0.6b-rust-step-00001800-strandset-rust-v1/out/final \
   --max_new_tokens 10000
 ```
