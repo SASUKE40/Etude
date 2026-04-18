@@ -29,8 +29,8 @@ if [[ ! -d "$CHECKPOINT_DIR" ]]; then
   exit 1
 fi
 
-if [[ ! -f "$CHECKPOINT_DIR/lit_model.pth" ]]; then
-  echo "ERROR: missing lit_model.pth in $CHECKPOINT_DIR" >&2
+if [[ ! -f "$CHECKPOINT_DIR/model.pth" ]]; then
+  echo "ERROR: missing model.pth in $CHECKPOINT_DIR" >&2
   exit 1
 fi
 
