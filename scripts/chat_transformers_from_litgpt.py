@@ -3,16 +3,13 @@
 Chat with a LitGPT checkpoint through Hugging Face Transformers.
 
 This script does not load a raw LitGPT `model.pth` directly into Transformers.
-Instead, it resolves the checkpoint directory, converts it to a Hugging Face
-checkpoint if needed, and then loads that converted checkpoint with
-`AutoModelForCausalLM` and `AutoTokenizer`.
+It expects an already-converted Hugging Face checkpoint directory and loads it
+with `AutoModelForCausalLM` and `AutoTokenizer`.
 """
 
 from __future__ import annotations
 
 import argparse
-import os
-import subprocess
 import sys
 from pathlib import Path
 
@@ -32,20 +29,13 @@ def parse_args() -> argparse.Namespace:
     )
     default_base = scratch_root / "litgpt-checkpoints" / "Qwen" / "Qwen3-0.6B"
 
-    parser = argparse.ArgumentParser(description="Chat with a LitGPT checkpoint via Hugging Face Transformers")
+    parser = argparse.ArgumentParser(description="Chat with an already-converted HF checkpoint via Hugging Face Transformers")
     parser.add_argument("checkpoint_path", type=Path, nargs="?", default=default_checkpoint)
-    parser.add_argument("--hf-dir", type=Path, default=None, help="Existing or target converted HF checkpoint dir.")
     parser.add_argument(
-        "--base-checkpoint-dir",
+        "--hf-dir",
         type=Path,
-        default=default_base,
-        help="Base Qwen checkpoint dir that provides tokenizer/config metadata for conversion.",
-    )
-    parser.add_argument(
-        "--conversion-python",
-        type=str,
-        default=sys.executable,
-        help="Python executable used for LitGPT conversion when HF files are missing.",
+        required=True,
+        help="Converted Hugging Face checkpoint dir containing config/tokenizer/model files.",
     )
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--dtype", choices=("auto", "float16", "bfloat16", "float32"), default="auto")
@@ -55,49 +45,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--top-k", type=int, default=50)
     parser.add_argument("--system", type=str, default=None, help="Optional system prompt.")
     return parser.parse_args()
-
-
-def resolve_checkpoint_dir(checkpoint_path: Path) -> Path:
-    checkpoint_path = checkpoint_path.expanduser().resolve()
-    if checkpoint_path.is_dir():
-        return checkpoint_path
-    if checkpoint_path.is_file() and checkpoint_path.name in {"model.pth", "lit_model.pth"}:
-        return checkpoint_path.parent
-    raise FileNotFoundError(
-        f"Checkpoint path must be a directory or a model.pth/lit_model.pth file: {checkpoint_path}"
-    )
-
-
-def ensure_litgpt_checkpoint_layout(checkpoint_dir: Path, base_checkpoint_dir: Path) -> None:
-    metadata_files = (
-        "config.json",
-        "generation_config.json",
-        "model_config.yaml",
-        "prompt_style.yaml",
-        "special_tokens_map.json",
-        "tokenizer.json",
-        "tokenizer.model",
-        "tokenizer_config.json",
-        "merges.txt",
-        "vocab.json",
-    )
-
-    lit_model = checkpoint_dir / "lit_model.pth"
-    model_pth = checkpoint_dir / "model.pth"
-    if not lit_model.exists() and model_pth.exists():
-        lit_model.symlink_to(model_pth.name)
-
-    if not lit_model.is_file():
-        raise FileNotFoundError(f"Missing LitGPT weights at {lit_model}")
-    if not base_checkpoint_dir.is_dir():
-        raise FileNotFoundError(f"Base checkpoint directory does not exist: {base_checkpoint_dir}")
-
-    for filename in metadata_files:
-        source = base_checkpoint_dir / filename
-        target = checkpoint_dir / filename
-        if target.exists() or not source.exists():
-            continue
-        target.symlink_to(source)
 
 
 def has_hf_checkpoint(hf_dir: Path) -> bool:
@@ -115,35 +62,6 @@ def has_hf_checkpoint(hf_dir: Path) -> bool:
             "model.pth",
         )
     )
-
-
-def run_conversion(conversion_python: str, checkpoint_dir: Path, hf_dir: Path) -> None:
-    help_proc = subprocess.run(
-        [conversion_python, "-m", "litgpt", "--help"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        check=True,
-    )
-    help_text = help_proc.stdout
-
-    if "convert_from_litgpt" in help_text:
-        cmd = [conversion_python, "-m", "litgpt", "convert_from_litgpt", str(checkpoint_dir), str(hf_dir)]
-    else:
-        cmd = [
-            conversion_python,
-            "-m",
-            "litgpt",
-            "convert",
-            "from_litgpt",
-            "--checkpoint_dir",
-            str(checkpoint_dir),
-            "--output_dir",
-            str(hf_dir),
-        ]
-
-    subprocess.run(cmd, check=True)
-
 
 def resolve_dtype(dtype_name: str) -> torch.dtype | str:
     if dtype_name == "auto":
@@ -165,21 +83,17 @@ def build_messages(system_prompt: str | None, user_prompt: str) -> list[dict[str
 
 def main() -> None:
     args = parse_args()
-    checkpoint_dir = resolve_checkpoint_dir(args.checkpoint_path)
-    hf_dir = (args.hf_dir.expanduser().resolve() if args.hf_dir else checkpoint_dir / "hf")
-    base_checkpoint_dir = args.base_checkpoint_dir.expanduser().resolve()
+    checkpoint_path = args.checkpoint_path.expanduser().resolve()
+    hf_dir = args.hf_dir.expanduser().resolve()
 
     if not has_hf_checkpoint(hf_dir):
-        ensure_litgpt_checkpoint_layout(checkpoint_dir, base_checkpoint_dir)
-        print(f"Converting LitGPT checkpoint to Hugging Face format in {hf_dir}", file=sys.stderr)
-        try:
-            run_conversion(args.conversion_python, checkpoint_dir, hf_dir)
-        except subprocess.CalledProcessError as exc:
-            raise SystemExit(
-                "Failed to convert the LitGPT checkpoint to Hugging Face format. "
-                "Your active LitGPT install may be too old for this checkpoint layout.\n"
-                f"Conversion command exited with status {exc.returncode}."
-            ) from exc
+        raise SystemExit(
+            f"Hugging Face checkpoint directory is missing or incomplete: {hf_dir}\n"
+            "Provide an already-converted HF directory with --hf-dir."
+        )
+
+    if not checkpoint_path.exists():
+        raise SystemExit(f"Checkpoint path does not exist: {checkpoint_path}")
 
     tokenizer = AutoTokenizer.from_pretrained(hf_dir, trust_remote_code=True)
     model = AutoModelForCausalLM.from_pretrained(

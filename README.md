@@ -619,13 +619,13 @@ To chat with the same checkpoint through Hugging Face Transformers, use:
 
 ```bash
 python scripts/chat_transformers_from_litgpt.py \
-  /scratch/$USER/litgpt-strandset-rust-sft/qwen3-0.6b-rust-step-00001800-strandset-rust-v1/out/final/model.pth
+  /scratch/$USER/litgpt-strandset-rust-sft/qwen3-0.6b-rust-step-00001800-strandset-rust-v1/out/final/model.pth \
+  --hf-dir /scratch/$USER/litgpt-strandset-rust-sft/qwen3-0.6b-rust-step-00001800-strandset-rust-v1/out/final/hf
 ```
 
-That script converts the LitGPT checkpoint to a Hugging Face checkpoint on
-demand and then loads it with `AutoTokenizer` and `AutoModelForCausalLM`. If
-you already have a converted checkpoint directory, pass it explicitly to skip
-conversion:
+That script does not convert the LitGPT checkpoint. It expects an already
+converted Hugging Face checkpoint directory and loads it with
+`AutoTokenizer` and `AutoModelForCausalLM`:
 
 ```bash
 python scripts/chat_transformers_from_litgpt.py \
