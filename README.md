@@ -591,6 +591,14 @@ litgpt chat /scratch/$USER/litgpt-strandset-rust-sft/qwen3-0.6b-rust-step-000018
   --max_new_tokens 10000
 ```
 
+After training completes, the self-contained final checkpoint can be loaded
+directly as well:
+
+```bash
+litgpt chat /scratch/$USER/litgpt-strandset-rust-sft/qwen3-0.6b-rust-step-00001800-strandset-rust-v1/out/final \
+  --max_new_tokens 10000
+```
+
 The Slurm log for:
 
 ```bash
