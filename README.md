@@ -540,6 +540,15 @@ python scripts/litgpt_infer_checkpoint.py chat \
   --base-checkpoint-dir /scratch/$USER/litgpt-checkpoints/Qwen/Qwen3-0.6B
 ```
 
+If that step directory already contains the tokenizer/config files (for example
+after exporting or copying a self-contained checkpoint folder), you can also
+chat with it directly through LitGPT:
+
+```bash
+litgpt chat /scratch/$USER/litgpt-nemotron-sft/qwen3-0.6b-rust-step-00001800-nemotron-instruction-following/out/step-000700 \
+  --max_new_tokens 512
+```
+
 If you exported a checkpoint into a self-contained folder, you can also use the
 helper script:
 
@@ -558,6 +567,21 @@ To just follow the newest SFT log live:
 
 ```bash
 tail -f "$(ls -t runs/litgpt-sft-*.log | head -1)"
+```
+
+For a Rust-focused LitGPT full-SFT run using
+`Fortytwo-Network/Strandset-Rust-v1`, prepare the dataset and submit the
+dedicated Slurm launcher:
+
+```bash
+bash runs/prepare_litgpt_strandset_rust.sh
+sbatch runs/litgpt_qwen3_strandset_rust_sft.slurm
+```
+
+That workflow writes under:
+
+```bash
+/scratch/$USER/litgpt-strandset-rust-sft/qwen3-0.6b-rust-step-00001800-strandset-rust-v1
 ```
 
 That launcher will:
