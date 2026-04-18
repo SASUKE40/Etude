@@ -87,8 +87,14 @@ if linked:
     print(f"Linked metadata from {base_checkpoint_dir}: {', '.join(linked)}")
 PY
 
-python -m litgpt convert from_litgpt \
-  --checkpoint_dir "$CHECKPOINT_DIR" \
-  --output_dir "$OUTPUT_DIR"
+if python -m litgpt --help 2>/dev/null | grep -q 'convert_from_litgpt'; then
+  python -m litgpt convert_from_litgpt \
+    --checkpoint_dir "$CHECKPOINT_DIR" \
+    --output_dir "$OUTPUT_DIR"
+else
+  python -m litgpt convert from_litgpt \
+    --checkpoint_dir "$CHECKPOINT_DIR" \
+    --output_dir "$OUTPUT_DIR"
+fi
 
 echo "Converted Hugging Face checkpoint written to: $OUTPUT_DIR"
