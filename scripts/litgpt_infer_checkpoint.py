@@ -34,7 +34,11 @@ def parse_args() -> argparse.Namespace:
     default_base = scratch_root / "litgpt-checkpoints" / "Qwen" / "Qwen3-0.6B"
     parser = argparse.ArgumentParser(description="Chat with or generate from a LitGPT training checkpoint")
     parser.add_argument("mode", choices=("chat", "generate"))
-    parser.add_argument("checkpoint_dir", type=Path, help="Checkpoint step directory containing lit_model.pth")
+    parser.add_argument(
+        "checkpoint_path",
+        type=Path,
+        help="Checkpoint directory or direct path to model.pth/lit_model.pth.",
+    )
     parser.add_argument(
         "--base-checkpoint-dir",
         type=Path,
@@ -104,10 +108,25 @@ def _override_context_length(checkpoint_dir: Path, context_length: int) -> None:
     print(f"Overrode LitGPT context length to {context_length} tokens in {model_config_path}")
 
 
+def _resolve_checkpoint_dir(checkpoint_path: Path) -> Path:
+    checkpoint_path = checkpoint_path.expanduser().resolve()
+    if checkpoint_path.is_dir():
+        return checkpoint_path
+    if checkpoint_path.is_file() and checkpoint_path.name in {"lit_model.pth", "model.pth"}:
+        return checkpoint_path.parent
+    raise FileNotFoundError(
+        f"Checkpoint path must be a directory or a model.pth/lit_model.pth file: {checkpoint_path}"
+    )
+
+
 def _prepare_checkpoint_dir(checkpoint_dir: Path, base_checkpoint_dir: Path, context_length: int | None = None) -> None:
     checkpoint_dir = checkpoint_dir.expanduser().resolve()
     base_checkpoint_dir = base_checkpoint_dir.expanduser().resolve()
     checkpoint_path = checkpoint_dir / "lit_model.pth"
+    model_path = checkpoint_dir / "model.pth"
+    if not checkpoint_path.is_file() and model_path.is_file():
+        checkpoint_path.symlink_to(model_path.name)
+        print(f"Linked LitGPT weights into {checkpoint_dir}: lit_model.pth -> {model_path.name}")
     if not checkpoint_path.is_file():
         raise FileNotFoundError(f"Missing LitGPT weights at {checkpoint_path}")
     if not base_checkpoint_dir.is_dir():
@@ -144,10 +163,10 @@ def _configure_runtime(allow_cudnn_sdp: bool) -> None:
 
 def main() -> None:
     args = parse_args()
-    _prepare_checkpoint_dir(args.checkpoint_dir, args.base_checkpoint_dir, context_length=args.context_length)
+    checkpoint_dir = _resolve_checkpoint_dir(args.checkpoint_path)
+    _prepare_checkpoint_dir(checkpoint_dir, args.base_checkpoint_dir, context_length=args.context_length)
     _configure_runtime(args.allow_cudnn_sdp)
 
-    checkpoint_dir = args.checkpoint_dir.expanduser().resolve()
     if args.mode == "chat":
         from litgpt.chat.base import main as litgpt_chat
 
