@@ -69,6 +69,11 @@ def load_model(hf_dir: Path, dtype_name: str, device: str):
     dtype = resolve_dtype(dtype_name)
 
     if model_pth.is_file():
+        if dtype == "auto":
+            if device.startswith("cuda") and torch.cuda.is_available():
+                dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+            else:
+                dtype = torch.float32
         config = AutoConfig.from_pretrained(hf_dir, trust_remote_code=True)
         model = AutoModelForCausalLM.from_config(
             config,
